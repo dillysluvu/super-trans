@@ -23,6 +23,20 @@ ln -sf "$SCRIPT_DIR/bin/super-trans" "$BIN_DIR/super-trans"
 ln -sf "$SCRIPT_DIR/bin/super-trans" "$BIN_DIR/trans"
 echo "  ✅ Đã liên kết lệnh: $BIN_DIR/super-trans và $BIN_DIR/trans"
 
+# 2.1 Cài đặt gói OCR đa ngôn ngữ (Anh, Pháp, Trung, Việt)
+TESSDATA_DIR="$HOME/.local/share/tessdata"
+mkdir -p "$TESSDATA_DIR"
+if [ -f "/usr/share/tesseract/tessdata/eng.traineddata" ]; then
+    ln -sf "/usr/share/tesseract/tessdata/eng.traineddata" "$TESSDATA_DIR/eng.traineddata"
+fi
+for lang in fra chi_sim vie; do
+    if [ ! -f "$TESSDATA_DIR/${lang}.traineddata" ]; then
+        echo "  📥 Đang tải gói OCR ${lang}..."
+        curl -sL -o "$TESSDATA_DIR/${lang}.traineddata" "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/${lang}.traineddata" || true
+    fi
+done
+echo "  ✅ Đã sẵn sàng OCR cho Tiếng Anh, Pháp, Trung, Việt"
+
 # 3. Tạo cấu hình phím tắt cho Niri
 mkdir -p "$NIRI_CONFIG_DIR/dms"
 cat > "$NIRI_TRANS_KDL" << 'EOF'
