@@ -42,25 +42,31 @@ mkdir -p "$NIRI_CONFIG_DIR/dms"
 cat > "$NIRI_TRANS_KDL" << 'EOF'
 // SuperTrans - Siêu tiện ích dịch thuật toàn hệ thống
 // Hợp tác phát triển bởi Antigravity AI và OpenCode AI
+// Tích hợp 100% vào các tiện ích có sẵn của hệ thống (DMS Launcher, DMS Notepad, wtype)
 
 binds {
-    // 🌐 Bôi đen text và nhấn Mod+Alt+T để dịch nhanh (Fast Mode)
-    Mod+Alt+T allow-inhibiting=false hotkey-overlay-title="SuperTrans: Dịch text bôi đen" {
-        spawn "super-trans" "--selection";
+    // 🌐 Bôi đen text và nhấn Mod+Alt+T để xem bản dịch trong DMS Launcher (Spotlight)
+    Mod+Alt+T allow-inhibiting=false hotkey-overlay-title="SuperTrans: Xem bản dịch trong DMS Launcher" {
+        spawn "super-trans" "--selection" "--output" "launcher";
     }
 
-    // 🤖 Bôi đen text và nhấn Mod+Alt+A để dịch chuyên sâu + phân tích AI (OpenCode)
-    Mod+Alt+A allow-inhibiting=false hotkey-overlay-title="SuperTrans: Dịch chuyên sâu AI (OpenCode)" {
+    // ✍️ Bôi đen text và nhấn Mod+Alt+R để THAY THẾ TRỰC TIẾP tại chỗ (In-place replace)
+    Mod+Alt+R allow-inhibiting=false hotkey-overlay-title="SuperTrans: Thay thế văn bản tại chỗ (In-place)" {
+        spawn "super-trans" "--replace";
+    }
+
+    // 🤖 Bôi đen text và nhấn Mod+Alt+A để phân tích chuyên sâu OpenCode AI trong DMS Notepad
+    Mod+Alt+A allow-inhibiting=false hotkey-overlay-title="SuperTrans: Phân tích AI trong DMS Notepad" {
         spawn "super-trans" "--selection" "--engine" "ai";
     }
 
-    // 📸 Nhấn Mod+Alt+O để kéo chuột chụp vùng ảnh trên màn hình và dịch OCR
-    Mod+Alt+O allow-inhibiting=false hotkey-overlay-title="SuperTrans: Chụp vùng màn hình dịch OCR" {
-        spawn "super-trans" "--ocr";
+    // 📸 Nhấn Mod+Alt+O để kéo chuột chụp vùng ảnh màn hình OCR và mở trong DMS Launcher
+    Mod+Alt+O allow-inhibiting=false hotkey-overlay-title="SuperTrans: Chụp vùng màn hình OCR" {
+        spawn "super-trans" "--ocr" "--output" "launcher";
     }
 
-    // ⌨️ Nhấn Mod+Alt+I để mở thanh nhập liệu dịch nhanh
-    Mod+Alt+I allow-inhibiting=false hotkey-overlay-title="SuperTrans: Hộp thoại nhập liệu dịch nhanh" {
+    // ⌨️ Nhấn Mod+Alt+I để mở thanh nhập liệu dịch nhanh bằng DMS Launcher
+    Mod+Alt+I allow-inhibiting=false hotkey-overlay-title="SuperTrans: Ô nhập liệu dịch DMS Launcher" {
         spawn "super-trans" "--input";
     }
 }

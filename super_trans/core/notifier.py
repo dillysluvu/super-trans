@@ -1,9 +1,10 @@
 """
-Quản lý hiển thị kết quả dịch thuật (Wayland OSD Floating Card, DMS Toast, Notification)
+Quản lý hiển thị kết quả dịch thuật tích hợp các công cụ sẵn có
 """
 
 import subprocess
 import shutil
+from super_trans.core.launcher import show_in_launcher, replace_selection_in_place
 from super_trans.core.osd import show_osd
 
 def send_dms_toast(original: str, translated: str, src_lang: str = "auto",
@@ -16,7 +17,6 @@ def send_dms_toast(original: str, translated: str, src_lang: str = "auto",
     tgt_display = tgt_lang.upper() if tgt_lang else "VI"
     title = f"🌐 [{src_display} ➔ {tgt_display}] ({engine_name})"
 
-    # Cắt ngắn bản dịch nếu cần cho thanh bar
     summary = translated.replace("\n", " ").strip()
     if len(summary) > 90:
         summary = summary[:87] + "..."
@@ -67,32 +67,27 @@ def send_notification(original: str, translated: str, src_lang: str = "auto",
 
 def display_result(original: str, translated: str, src_lang: str = "auto",
                    tgt_lang: str = "vi", engine_name: str = "Fast",
-                   mode: str = "osd", timeout_ms: int = 6000) -> bool:
+                   mode: str = "launcher", timeout_ms: int = 6000) -> bool:
     """
-    Điểm tập trung hiển thị output theo mode:
-    - 'osd': Wayland Layer-Shell Floating Card (Tối giản, đẹp mắt, đồng nhất Niri & DMS)
+    Điểm tập trung hiển thị output:
+    - 'launcher': Mở trực tiếp trong DMS Launcher / Spotlight có sẵn (Đồng nhất 100%)
+    - 'replace': Thay thế trực tiếp tại chỗ bằng wtype (0 cửa sổ, 0 thông báo)
+    - 'osd': Thẻ OSD nổi Wayland
     - 'dms_toast': Toast trực tiếp trên Dynamic Island của DMS
     - 'notification': Thông báo notify-send
     """
+    if mode == "launcher":
+        action = show_in_launcher(original, translated, src_lang, tgt_lang, engine_name)
+        return bool(action)
+
+    if mode == "replace":
+        return replace_selection_in_place(translated)
+
     if mode == "osd":
-        # Thử khởi chạy OSD Card nổi cực đẹp
         timeout_sec = max(4.0, timeout_ms / 1000.0)
-        # Nếu là bài dịch dài hoặc AI, tăng thời gian đọc lên 12s
         if len(translated) > 200:
             timeout_sec = 12.0
-
-        success = show_osd(
-            original=original,
-            translated=translated,
-            src_lang=src_lang,
-            tgt_lang=tgt_lang,
-            engine=engine_name,
-            timeout_sec=timeout_sec
-        )
-        if success:
-            return True
-        # Fallback sang dms_toast nếu OSD không chạy được
-        mode = "dms_toast"
+        return show_osd(original, translated, src_lang, tgt_lang, engine_name, timeout_sec)
 
     if mode == "dms_toast":
         if send_dms_toast(original, translated, src_lang, tgt_lang, engine_name):
