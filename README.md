@@ -11,7 +11,14 @@
    - **Hộp thoại gõ nhanh (Quick Prompt)**: Nhấn phím tắt để mở thanh gõ nhanh của Wayland (Fuzzel/Zenity), gõ hoặc dán câu cần dịch rồi nhấn Enter.
    - **Terminal CLI & Pipe**: Dễ dàng dùng trong terminal: `trans "hello"` hoặc `echo "..." | trans`.
 
-2. **Hai động cơ dịch phối hợp (Dual Engine: Fast + OpenCode AI)**:
+2. **Hình thức hiển thị tối ưu, thẩm mỹ và đồng nhất (Wayland Layer-Shell OSD)**:
+   - 🪟 **Floating OSD Card (Mặc định)**: Hiển thị dạng thẻ nổi OSD bo góc 14px, viền màu accent `#1a6265` đồng bộ hoàn hảo với theme Niri/DMS.
+     - **Không phá vỡ layout**: Là Wayland Layer-Shell surface, nổi mượt mà trên mọi cửa sổ mà không bị Niri tự chia ô (tiling).
+     - **Phím tắt nhanh**: Nhấn `Esc` để đóng tức thì, Click chuột vào thẻ để sao chép kết quả (`✓ Đã copy`).
+     - **Tự động đếm ngược**: Tự ẩn sau vài giây, tự động giữ hiển thị nếu rê chuột vào thẻ để bạn đọc đoạn văn dài.
+   - 🏝️ **DMS Native Toast**: Hỗ trợ hiển thị trực tiếp lên thanh đảo động (Dynamic Island) của DMS shell (`--output dms_toast`).
+
+3. **Hai động cơ dịch phối hợp (Dual Engine: Fast + OpenCode AI)**:
    - ⚡ **Fast Engine (Google)**: Tốc độ phản hồi cực nhanh (~100-200ms), 100% miễn phí, không cần token hay API key. Phù hợp đọc lướt nhanh.
    - 🧠 **Smart AI Engine (OpenCode)**: Kết nối trực tiếp với OpenCode CLI chạy DeepSeek/GLM/Nemotron. Dịch sâu theo ngữ cảnh thực tế, phân tích thành ngữ (idioms), tiếng lóng (slang), ngữ pháp và thuật ngữ kỹ thuật.
 
