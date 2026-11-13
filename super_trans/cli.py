@@ -1,0 +1,138 @@
+"""
+CLI Entry Point cho SuperTrans
+"""
+
+import sys
+import argparse
+import select
+from super_trans.config import load_config
+from super_trans.core.detector import resolve_languages
+from super_trans.core.clipboard import get_selection_text, set_clipboard_text
+from super_trans.core.ocr import capture_and_ocr
+from super_trans.core.notifier import send_notification
+from super_trans.core.ui import prompt_input, show_detail_dialog
+from super_trans.engines.fast_engine import FastEngine
+from super_trans.engines.opencode_engine import OpenCodeEngine
+from super_trans import __version__
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        prog="super-trans",
+        description="🌐 SuperTrans - Siêu tiện ích dịch thuật toàn hệ thống (Hợp tác Antigravity & OpenCode)"
+    )
+
+    parser.add_argument("text", nargs="*", help="Văn bản cần dịch (hoặc để trống để dùng các chế độ phím tắt)")
+    parser.add_argument("-s", "--selection", action="store_true", help="Lấy văn bản đang được bôi đen hoặc trong clipboard")
+    parser.add_argument("-o", "--ocr", action="store_true", help="Kéo chuột chụp vùng màn hình và nhận diện chữ (OCR)")
+    parser.add_argument("-i", "--input", action="store_true", help="Mở thanh nhập liệu nhanh để gõ văn bản cần dịch")
+    parser.add_argument("-e", "--engine", choices=["fast", "ai"], default=None, help="Bộ máy dịch: 'fast' (tốc độ cao) hoặc 'ai' (OpenCode AI)")
+    parser.add_argument("--from", dest="from_lang", default=None, help="Mã ngôn ngữ nguồn (ví dụ: en, vi, ja, zh, auto)")
+    parser.add_argument("--to", dest="to_lang", default=None, help="Mã ngôn ngữ đích (ví dụ: vi, en, ja, fr)")
+    parser.add_argument("-p", "--popup", action="store_true", help="Hiển thị cửa sổ popup chi tiết kết quả dịch")
+    parser.add_argument("--no-notify", action="store_true", help="Không gửi thông báo desktop")
+    parser.add_argument("--no-copy", action="store_true", help="Không tự động copy kết quả vào clipboard")
+    parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
+
+    return parser.parse_args()
+
+def main() -> int:
+    args = parse_args()
+    config = load_config()
+
+    input_text = ""
+
+    # 1. Thu thập văn bản cần dịch theo độ ưu tiên
+    if args.ocr:
+        ocr_lang = config.get("ocr_lang", "eng")
+        input_text = capture_and_ocr(lang=ocr_lang)
+        if not input_text:
+            return 0  # Hủy chọn hoặc không nhận diện được chữ
+    elif args.input:
+        input_text = prompt_input()
+        if not input_text:
+            return 0  # Người dùng hủy nhập
+    elif args.selection:
+        input_text = get_selection_text()
+        if not input_text:
+            send_notification("Thông báo", "Không tìm thấy văn bản nào được bôi đen hoặc trong clipboard.",
+                              timeout_ms=3000)
+            return 1
+    elif args.text:
+        input_text = " ".join(args.text).strip()
+    elif not sys.stdin.isatty():
+        # Đọc dữ liệu từ pipe (ví dụ: echo "hello" | super-trans)
+        input_text = sys.stdin.read().strip()
+
+    if not input_text:
+        # Nếu chạy không tham số, mở input prompt mặc định
+        input_text = prompt_input()
+        if not input_text:
+            return 0
+
+    # 2. Xác định ngôn ngữ nguồn & đích tự động
+    src_lang, tgt_lang = resolve_languages(
+        input_text,
+        source_lang=args.from_lang,
+        target_lang=args.to_lang,
+        primary_target=config.get("primary_target_lang", "vi"),
+        secondary_target=config.get("secondary_target_lang", "en")
+    )
+
+    # 3. Lựa chọn bộ máy dịch
+    engine_choice = args.engine or config.get("default_engine", "fast")
+
+    translated = ""
+    detected_src = src_lang
+    active_engine_name = "Fast"
+
+    if engine_choice == "ai":
+        active_engine_name = "OpenCode AI"
+        ai_engine = OpenCodeEngine(model=config.get("ai_model", "opencode/deepseek-v4.1-flash-free"))
+        try:
+            translated, detected_src = ai_engine.translate(input_text, src_lang=src_lang, tgt_lang=tgt_lang)
+        except Exception as e:
+            # Fallback sang FastEngine nếu AI gặp lỗi
+            fallback_engine = FastEngine()
+            translated, detected_src = fallback_engine.translate(input_text, src_lang=src_lang, tgt_lang=tgt_lang)
+            active_engine_name = "Fast (AI Fallback)"
+    else:
+        fast_engine = FastEngine()
+        try:
+            translated, detected_src = fast_engine.translate(input_text, src_lang=src_lang, tgt_lang=tgt_lang)
+            active_engine_name = "Fast"
+        except Exception as e:
+            send_notification("Lỗi dịch thuật", str(e), timeout_ms=5000)
+            print(f"Lỗi: {e}", file=sys.stderr)
+            return 1
+
+    # 4. Sao chép kết quả vào clipboard nếu được bật
+    if not args.no_copy and config.get("auto_copy_to_clipboard", True):
+        # Trích xuất phần dịch chính để copy nếu là AI mode
+        set_clipboard_text(translated)
+
+    # 5. Gửi thông báo màn hình
+    if not args.no_notify:
+        timeout_ms = config.get("notification_timeout_ms", 6000)
+        send_notification(
+            original=input_text,
+            translated=translated,
+            src_lang=detected_src,
+            tgt_lang=tgt_lang,
+            engine_name=active_engine_name,
+            timeout_ms=timeout_ms
+        )
+
+    # 6. Mở Popup chi tiết nếu được yêu cầu hoặc nếu AI mode bật tùy chọn popup
+    should_popup = args.popup or (engine_choice == "ai" and config.get("show_popup_on_ai", True))
+    if should_popup:
+        show_detail_dialog(
+            title=f"SuperTrans [{detected_src.upper()} ➔ {tgt_lang.upper()}] - {active_engine_name}",
+            text=f"=== NGUỒN ({detected_src.upper()}) ===\n{input_text}\n\n=== BẢN DỊCH ({tgt_lang.upper()}) ===\n{translated}"
+        )
+
+    # 7. In ra stdout cho terminal / script
+    print(translated)
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

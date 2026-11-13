@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""
+SuperTrans - Siêu tiện ích dịch thuật toàn hệ thống
+Phối hợp phát triển bởi Antigravity AI và OpenCode AI
+"""
+
+import sys
+import os
+
+# Add parent directory to sys.path so package can be imported directly
+# Resolve realpath if invoked through symlinks (e.g. ~/.local/bin/trans)
+real_file = os.path.realpath(__file__)
+current_dir = os.path.dirname(real_file)
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+from super_trans.cli import main
+
+if __name__ == "__main__":
+    sys.exit(main())
