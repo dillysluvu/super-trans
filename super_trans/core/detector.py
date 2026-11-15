@@ -39,7 +39,10 @@ PURE_VI_PATTERN = re.compile(
 VIETNAMESE_WORDS = {
     "và", "là", "của", "trong", "cho", "với", "không", "người", "được",
     "có", "một", "những", "các", "đến", "này", "về", "sẽ", "ra", "khi",
-    "đã", "tại", "từ", "như", "theo", "trên", "vào", "hơn", "đó", "mà"
+    "đã", "tại", "từ", "như", "theo", "trên", "vào", "hơn", "đó", "mà",
+    "chào", "xin", "bạn", "tôi", "chúng", "họ", "cảm", "ơn", "hôm", "nay",
+    "rất", "vui", "gặp", "lại", "nhé", "thế", "nào", "gì", "sao", "vì",
+    "nếu", "thì", "để", "làm", "muốn", "cần", "phải", "nên", "thể", "đang",
 }
 
 def is_vietnamese(text: str) -> bool:
@@ -60,19 +63,20 @@ def is_vietnamese(text: str) -> bool:
     if FRENCH_CHARS_PATTERN.search(norm):
         return False
 
-    # 3. Phân tích các từ
+    # 3. Tách từ để phân tích từ vựng
     words = re.findall(r"\b[a-zA-Z\u00C0-\u024F\u1EA0-\u1EF9]+\b", norm.lower())
     clean_words = [re.sub(r"[^a-z]", "", w) for w in words]
 
-    # Kiểm tra xem có phải câu tiếng Pháp không
-    if any(w in FRENCH_WORDS for w in clean_words) and not any(w in VIETNAMESE_WORDS for w in words):
-        return False
-
-    # 4. Kiểm tra các ký tự thuần Việt
+    # 4. Ký tự thuần Việt (ưu tiên trước khi xét từ vựng tiếng Pháp,
+    #    tránh nhầm các câu như "Nó la mắng tôi" vì có từ "la")
     if PURE_VI_PATTERN.search(norm):
         return True
 
-    # 5. Kiểm tra các từ tiếng Việt thông dụng
+    # 5. Nếu có từ đặc trưng tiếng Pháp và không có từ tiếng Việt -> tiếng Pháp
+    if any(w in FRENCH_WORDS for w in clean_words) and not any(w in VIETNAMESE_WORDS for w in words):
+        return False
+
+    # 6. Kiểm tra các từ tiếng Việt thông dụng
     if any(w in VIETNAMESE_WORDS for w in words):
         return True
 
@@ -85,15 +89,16 @@ def resolve_languages(text: str, source_lang: str = None, target_lang: str = Non
     Ưu tiên dịch sang Tiếng Việt (vi) cho mọi ngôn ngữ ngoại lai (Anh, Pháp, Trung...).
     Chỉ dịch sang Tiếng Anh nếu văn bản nguồn thực sự là Tiếng Việt.
     """
-    if source_lang and target_lang:
-        return source_lang, target_lang
+    # Người dùng chỉ định rõ ngôn ngữ nguồn
+    if source_lang and source_lang != "auto":
+        if target_lang:
+            return source_lang, target_lang
+        if source_lang == "vi":
+            return "vi", secondary_target
+        return source_lang, primary_target
 
     if is_vietnamese(text):
-        src = source_lang or "vi"
-        tgt = target_lang or secondary_target
-    else:
-        # Tự động nhận diện nguồn (Anh, Pháp, Trung, ...) và dịch sang Tiếng Việt
-        src = source_lang or "auto"
-        tgt = target_lang or primary_target
+        return "vi", target_lang or secondary_target
 
-    return src, tgt
+    # Tự động nhận diện nguồn (Anh, Pháp, Trung, ...)
+    return "auto", target_lang or primary_target

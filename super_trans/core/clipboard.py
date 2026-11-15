@@ -5,6 +5,8 @@ Tương tác Clipboard & Selection trên Wayland / X11
 import subprocess
 import shutil
 
+from super_trans.core import dms
+
 def get_selection_text() -> str:
     """
     Lấy văn bản đang được bôi đen (PRIMARY selection).
@@ -70,9 +72,13 @@ def get_selection_text() -> str:
     return ""
 
 def set_clipboard_text(text: str) -> bool:
-    """Sao chép văn bản vào clipboard hệ thống."""
+    """Sao chép văn bản vào clipboard hệ thống (ưu tiên DMS Clipboard)."""
     if not text:
         return False
+
+    # 1. DMS Clipboard Manager: đồng bộ trực tiếp với lịch sử clipboard của DMS
+    if dms.copy_text(text):
+        return True
 
     if shutil.which("wl-copy"):
         try:

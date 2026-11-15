@@ -7,7 +7,25 @@ import sys
 import os
 import argparse
 import subprocess
-import shutil
+
+# Cho phép chạy trực tiếp: python3 super_trans/core/osd.py
+_PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _PROJECT_DIR not in sys.path:
+    sys.path.insert(0, _PROJECT_DIR)
+
+from super_trans.core.clipboard import set_clipboard_text
+
+
+def osd_available() -> bool:
+    """Kiểm tra GTK4 có sẵn để hiển thị OSD hay không."""
+    try:
+        import gi
+        gi.require_version("Gtk", "4.0")
+        gi.require_version("Gdk", "4.0")
+        return True
+    except Exception:
+        return False
+
 
 def run_osd_app(original: str, translated: str, src_lang: str, tgt_lang: str,
                 engine: str, timeout_sec: float = 6.0):
@@ -23,13 +41,19 @@ def run_osd_app(original: str, translated: str, src_lang: str, tgt_lang: str,
     except Exception:
         pass
 
-    from gi.repository import Gtk, Gdk, GLib
+    from gi.repository import Gtk, Gdk, GLib, Gio
 
-    app = Gtk.Application(application_id="dev.supertrans.osd.popup")
+    app = Gtk.Application(
+        application_id="dev.supertrans.osd.popup",
+        flags=Gio.ApplicationFlags.NON_UNIQUE,
+    )
 
     def on_activate(app):
         win = Gtk.ApplicationWindow(application=app)
         win.set_title("SuperTrans")
+        win.add_css_class("osd-window")
+        win.set_decorated(False)
+        win.set_resizable(False)
 
         # 1. Cấu hình Wayland Layer Shell
         if use_layer_shell:
@@ -50,6 +74,10 @@ def run_osd_app(original: str, translated: str, src_lang: str, tgt_lang: str,
         @define-color st_accent_soft rgba(26, 98, 101, 0.22);
         @define-color st_card_bg rgba(18, 22, 23, 0.93);
         @define-color st_border rgba(26, 98, 101, 0.85);
+
+        window.osd-window {
+            background-color: transparent;
+        }
 
         .osd-card {
             background-color: @st_card_bg;
@@ -233,15 +261,12 @@ def run_osd_app(original: str, translated: str, src_lang: str, tgt_lang: str,
 
         # Click để copy
         def on_click(gesture, n_press, x, y):
-            if shutil.which("wl-copy"):
-                try:
-                    p = subprocess.Popen(["wl-copy"], stdin=subprocess.PIPE, text=True)
-                    p.communicate(input=translated.strip())
-                except Exception:
-                    pass
-            hint_lbl.set_label("✓ Đã copy vào bộ nhớ đệm!")
-            hint_lbl.remove_css_class("osd-hint")
-            hint_lbl.add_css_class("osd-hint-copied")
+            if set_clipboard_text(translated.strip()):
+                hint_lbl.set_label("✓ Đã copy vào bộ nhớ đệm!")
+                hint_lbl.remove_css_class("osd-hint")
+                hint_lbl.add_css_class("osd-hint-copied")
+            else:
+                hint_lbl.set_label("⚠ Không thể copy vào bộ nhớ đệm")
 
         click_controller = Gtk.GestureClick.new()
         click_controller.connect("pressed", on_click)
@@ -285,7 +310,7 @@ def run_osd_app(original: str, translated: str, src_lang: str, tgt_lang: str,
                     return False
             return True
 
-        GLIB_TIMER = GLib.timeout_add(state["step_ms"], on_timer)
+        GLib.timeout_add(state["step_ms"], on_timer)
 
         win.present()
 
@@ -298,10 +323,27 @@ def show_osd(original: str, translated: str, src_lang: str = "auto",
     Khởi chạy floating OSD trong tiến trình nền độc lập.
     Không làm block CLI hay phím tắt.
     """
+    if not osd_available():
+        return False
+    if not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
+        return False
+
     env = os.environ.copy()
-    layer_so = "/usr/lib64/libgtk4-layer-shell.so"
-    if os.path.exists(layer_so):
-        env["LD_PRELOAD"] = layer_so
+
+    # Một số bản GTK4 cần preload libgtk4-layer-shell để Layer Shell hoạt động.
+    layer_candidates = [
+        os.environ.get("SUPERTRANS_LAYER_SHELL_SO", ""),
+        "/usr/lib64/libgtk4-layer-shell.so",
+        "/usr/lib/x86_64-linux-gnu/libgtk4-layer-shell.so",
+        "/usr/lib/aarch64-linux-gnu/libgtk4-layer-shell.so",
+        "/usr/lib/libgtk4-layer-shell.so",
+        "/usr/local/lib/libgtk4-layer-shell.so",
+    ]
+    for layer_so in layer_candidates:
+        if layer_so and os.path.exists(layer_so):
+            existing = env.get("LD_PRELOAD", "")
+            env["LD_PRELOAD"] = f"{layer_so}:{existing}" if existing else layer_so
+            break
 
     this_file = os.path.abspath(__file__)
     # Thêm project dir vào PYTHONPATH

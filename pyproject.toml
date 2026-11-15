@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "super-trans"
+version = "1.1.0"
+description = "Siêu tiện ích dịch thuật toàn hệ thống cho Fedora/Niri/DMS"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Antigravity & OpenCode" },
+]
+keywords = ["translation", "wayland", "niri", "dms", "ocr", "opencode"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3",
+    "Topic :: Text Processing :: Linguistic",
+]
+dependencies = []
+
+[project.scripts]
+super-trans = "super_trans.cli:main"
+trans = "super_trans.cli:main"
+
+[tool.setuptools]
+packages = ["super_trans", "super_trans.core", "super_trans.engines"]
