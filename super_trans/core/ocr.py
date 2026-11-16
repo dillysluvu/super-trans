@@ -1,6 +1,11 @@
 """
 Chụp ảnh màn hình vùng chọn và nhận diện ký tự OCR (Grim + Slurp + Tesseract)
 Hỗ trợ đa ngôn ngữ đồng thời: Tiếng Anh (eng), Tiếng Pháp (fra), Tiếng Trung (chi_sim), Tiếng Việt (vie)
+
+Ngoài chụp vùng màn hình, module còn hỗ trợ:
+  - OCR một file ảnh có sẵn (``image_path``).
+  - OCR ảnh đang có trong clipboard (``from_clipboard``).
+  - Tăng cường ảnh trước khi nhận diện (``preprocess``).
 """
 
 import os
@@ -21,6 +26,7 @@ SYSTEM_TESSDATA_DIRS = (
 )
 
 OCR_TOOLS = ("slurp", "grim", "tesseract")
+CLIPBOARD_IMAGE_TYPES = ("image/png", "image/jpeg", "image/webp", "image/bmp")
 
 
 def _available_in(tessdata_dir: str) -> List[str]:
@@ -73,27 +79,52 @@ def select_ocr_languages(requested: Optional[str] = None,
     return "+".join(dict.fromkeys(selected))
 
 
-def missing_ocr_dependencies() -> List[str]:
+def missing_ocr_dependencies(need_capture: bool = True,
+                             need_clipboard: bool = False) -> List[str]:
     """Danh sách công cụ OCR còn thiếu trên hệ thống."""
-    return [tool for tool in OCR_TOOLS if shutil.which(tool) is None]
+    tools = list(OCR_TOOLS) if need_capture else ["tesseract"]
+    if need_clipboard:
+        tools.append("wl-paste")
+    return [tool for tool in tools if shutil.which(tool) is None]
 
 
-def capture_and_ocr(lang: Optional[str] = None) -> str:
-    """
-    Kéo chuột chọn một vùng trên màn hình, chụp ảnh và OCR thành văn bản.
-    Trả về chuỗi rỗng nếu người dùng hủy chọn hoặc không nhận diện được chữ.
-    """
-    missing = missing_ocr_dependencies()
-    if missing:
+def _temp_file(suffix: str, prefix: str = "super-trans-ocr-") -> str:
+    fd, path = tempfile.mkstemp(suffix=suffix, prefix=prefix)
+    os.close(fd)
+    return path
+
+
+def _grab_clipboard_image() -> str:
+    """Lưu ảnh trong clipboard ra file tạm. Trả về đường dẫn hoặc chuỗi rỗng."""
+    if not shutil.which("wl-paste"):
         raise RuntimeError(
-            "Thiếu công cụ OCR: " + ", ".join(missing)
-            + ". Cài đặt bằng: sudo dnf install grim slurp tesseract"
+            "Cần wl-paste (wl-clipboard) để đọc ảnh từ clipboard."
         )
 
-    if not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
-        raise RuntimeError("Không tìm thấy màn hình Wayland/X11 để chụp ảnh.")
+    for mime in CLIPBOARD_IMAGE_TYPES:
+        path = _temp_file(".png")
+        try:
+            with open(path, "wb") as handle:
+                res = subprocess.run(
+                    ["wl-paste", "--type", mime],
+                    stdout=handle,
+                    stderr=subprocess.PIPE,
+                    timeout=8,
+                )
+            if res.returncode == 0 and os.path.getsize(path) > 0:
+                return path
+        except (OSError, subprocess.SubprocessError):
+            pass
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
-    # 1. Chọn vùng màn hình qua slurp
+    raise RuntimeError("Clipboard hiện không chứa ảnh (PNG/JPEG/WebP/BMP).")
+
+
+def _capture_region() -> str:
+    """Chọn vùng bằng slurp rồi chụp bằng grim. Trả về file tạm hoặc rỗng."""
     try:
         slurp_res = subprocess.run(["slurp"], capture_output=True, text=True, timeout=30)
         geometry = slurp_res.stdout.strip()
@@ -102,17 +133,89 @@ def capture_and_ocr(lang: Optional[str] = None) -> str:
     except (OSError, subprocess.SubprocessError):
         return ""
 
-    # 2. Chụp ảnh vùng chọn bằng grim
-    fd, tmp_path = tempfile.mkstemp(suffix=".png", prefix="super-trans-ocr-")
-    os.close(fd)
-
+    path = _temp_file(".png")
     try:
         grim_res = subprocess.run(
-            ["grim", "-g", geometry, tmp_path],
-            capture_output=True, text=True, timeout=8,
+            ["grim", "-g", geometry, path],
+            capture_output=True,
+            text=True,
+            timeout=8,
         )
-        if grim_res.returncode != 0 or not os.path.exists(tmp_path):
+        if grim_res.returncode != 0 or not os.path.exists(path) or os.path.getsize(path) == 0:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
             return ""
+        return path
+    except (OSError, subprocess.SubprocessError):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        return ""
+
+
+def capture_and_ocr(lang: Optional[str] = None, preprocess: bool = True,
+                    image_path: Optional[str] = None,
+                    from_clipboard: bool = False,
+                    psm: int = 3) -> str:
+    """
+    Nhận diện chữ từ vùng màn hình, file ảnh hoặc clipboard.
+
+    - Không truyền ``image_path``/``from_clipboard``: kéo chuột chọn vùng.
+    - Trả về chuỗi rỗng nếu người dùng hủy chọn hoặc không nhận diện được chữ.
+    - Ném RuntimeError khi thiếu công cụ hoặc ảnh đầu vào không hợp lệ.
+    """
+    need_capture = not image_path and not from_clipboard
+    missing = missing_ocr_dependencies(
+        need_capture=need_capture,
+        need_clipboard=from_clipboard,
+    )
+    if missing:
+        raise RuntimeError(
+            "Thiếu công cụ OCR: " + ", ".join(missing)
+            + ". Cài đặt bằng: sudo dnf install grim slurp tesseract "
+              "wl-clipboard"
+        )
+
+    if need_capture and not (
+        os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")
+    ):
+        raise RuntimeError("Không tìm thấy màn hình Wayland/X11 để chụp ảnh.")
+
+    if from_clipboard and not os.environ.get("WAYLAND_DISPLAY"):
+        raise RuntimeError(
+            "Đọc ảnh từ clipboard cần phiên Wayland (WAYLAND_DISPLAY)."
+        )
+
+    if image_path and not os.path.isfile(image_path):
+        raise RuntimeError(f"Không tìm thấy file ảnh: {image_path}")
+
+    temp_paths = []
+
+    try:
+        # 1. Lấy ảnh đầu vào
+        if image_path:
+            source_path = image_path
+        elif from_clipboard:
+            source_path = _grab_clipboard_image()
+            temp_paths.append(source_path)
+        else:
+            source_path = _capture_region()
+            if not source_path:
+                return ""
+            temp_paths.append(source_path)
+
+        # 2. Tăng cường ảnh (nếu bật và có backend). Import muộn để không
+        #    kéo Pillow vào mọi lần dịch thông thường.
+        ocr_path = source_path
+        if preprocess:
+            from super_trans.core.image_prep import preprocess_image
+            processed_path, _backend = preprocess_image(source_path)
+            if processed_path != source_path:
+                temp_paths.append(processed_path)
+                ocr_path = processed_path
 
         # 3. Trích xuất text bằng tesseract
         available_langs, tess_dir = get_available_ocr_langs()
@@ -122,17 +225,22 @@ def capture_and_ocr(lang: Optional[str] = None) -> str:
         if tess_dir:
             tess_cmd.extend(["--tessdata-dir", tess_dir])
         tess_cmd.extend([
-            tmp_path,
+            ocr_path,
             "stdout",
             "-l", lang_arg,
+        ])
+        if 0 <= int(psm) <= 13:
+            tess_cmd.extend(["--psm", str(int(psm))])
+        tess_cmd.extend([
             "-c", "preserve_interword_spaces=1",
+            "-c", "user_defined_dpi=300",
         ])
 
         tess_res = subprocess.run(
             tess_cmd,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=45,
         )
         if tess_res.returncode == 0:
             return tess_res.stdout.strip()
@@ -140,8 +248,9 @@ def capture_and_ocr(lang: Optional[str] = None) -> str:
     except (OSError, subprocess.SubprocessError):
         return ""
     finally:
-        if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
+        for path in temp_paths:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass

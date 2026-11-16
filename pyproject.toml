@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "super-trans"
-version = "1.1.0"
+version = "1.2.0"
 description = "Siêu tiện ích dịch thuật toàn hệ thống cho Fedora/Niri/DMS"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -20,6 +20,13 @@ classifiers = [
     "Topic :: Text Processing :: Linguistic",
 ]
 dependencies = []
+
+[project.optional-dependencies]
+ocr = ["Pillow>=9"]
+
+[project.urls]
+Homepage = "https://github.com/dillysluvu/super-trans"
+Repository = "https://github.com/dillysluvu/super-trans"
 
 [project.scripts]
 super-trans = "super_trans.cli:main"

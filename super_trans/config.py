@@ -23,11 +23,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "notification_timeout_ms": 6000,          # Thời gian timeout (ms)
     "show_popup_on_ai": True,                 # Mở bài phân tích AI trong DMS Notepad
     "ocr_lang": "eng+fra+chi_sim+vie",        # Ngôn ngữ mặc định cho Tesseract OCR
+    "ocr_preprocess": True,                   # Tăng cường ảnh trước khi OCR (Pillow/ImageMagick)
+    "ocr_psm": 3,                             # Page Segmentation Mode của Tesseract (0-13)
+    "cache_enabled": True,                    # Cache bản dịch + lưu lịch sử SQLite
+    "history_limit": 500,                     # Số mục lịch sử tối đa giữ lại
 }
 
 _INT_RANGES = {
     "notification_timeout_ms": (1000, 60000),
     "ai_timeout_sec": (10, 600),
+    "ocr_psm": (0, 13),
+    "history_limit": (10, 10000),
 }
 
 
@@ -50,7 +56,8 @@ def _sanitize(user_conf: Dict[str, Any]) -> Dict[str, Any]:
             value = DEFAULT_CONFIG[key]
         merged[key] = max(low, min(high, value))
 
-    for key in ("auto_copy_to_clipboard", "show_popup_on_ai"):
+    for key in ("auto_copy_to_clipboard", "show_popup_on_ai",
+                "ocr_preprocess", "cache_enabled"):
         if not isinstance(merged.get(key), bool):
             merged[key] = DEFAULT_CONFIG[key]
 

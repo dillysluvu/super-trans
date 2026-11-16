@@ -14,8 +14,8 @@ import shutil
 import subprocess
 import time
 
-from super_trans.core import dms
-from super_trans.core.clipboard import set_clipboard_text
+from super_trans.core import dms, store
+from super_trans.core.clipboard import set_clipboard_text, set_primary_text
 from super_trans.engines.opencode_engine import OpenCodeEngine
 
 # Các terminal cần Ctrl+Shift+V thay vì Ctrl+V
@@ -72,10 +72,16 @@ def _send_paste(shift: bool) -> bool:
         return False
 
 
-def replace_selection_in_place(text: str, focus_delay: float = 0.0) -> bool:
+def replace_selection_in_place(text: str, focus_delay: float = 0.0,
+                               original: str = None, src_lang: str = "auto",
+                               tgt_lang: str = "vi", engine: str = "fast",
+                               record: bool = True) -> bool:
     """
     Thay thế trực tiếp đoạn văn bản đang bôi đen bằng bản dịch.
     Không mở bất kỳ cửa sổ hay thông báo nào.
+
+    Khi ``original`` được cung cấp, lưu lại lần thay thế vào SQLite để có thể
+    hoàn tác bằng ``super-trans --undo``.
     """
     if not text:
         return False
@@ -86,19 +92,93 @@ def replace_selection_in_place(text: str, focus_delay: float = 0.0) -> bool:
 
     # 1. Đưa bản dịch vào CLIPBOARD (và PRIMARY để middle-click vẫn dùng được)
     set_clipboard_text(text)
-    if shutil.which("wl-copy"):
-        try:
-            proc = subprocess.Popen(["wl-copy", "--primary"], stdin=subprocess.PIPE, text=True)
-            proc.communicate(input=text, timeout=2)
-        except (OSError, subprocess.SubprocessError):
-            pass
+    set_primary_text(text)
 
     # 2. Chờ compositor cập nhật clipboard
     time.sleep(0.12)
 
     # 3. Dán đè tại vị trí con trỏ (Ctrl+Shift+V trong terminal)
-    shift = _is_terminal(_focused_app_id())
-    return _send_paste(shift=shift)
+    app_id = _focused_app_id()
+    shift = _is_terminal(app_id)
+    pasted = _send_paste(shift=shift)
+
+    # 4. Chỉ ghi nhận khi đã dán thành công, để undo không khôi phục nhầm.
+    if pasted and record and original:
+        store.record_replacement(
+            original_text=original,
+            translated_text=text,
+            app_id=app_id,
+            source_lang=src_lang,
+            target_lang=tgt_lang,
+            engine=engine,
+        )
+
+    return pasted
+
+
+def _send_ctrl_z() -> bool:
+    """Gửi Ctrl+Z qua wtype (DMS hiện chưa có lệnh gửi phím tùy ý)."""
+    if not shutil.which("wtype"):
+        return False
+    try:
+        res = subprocess.run(
+            ["wtype", "-M", "ctrl", "-k", "z", "-m", "ctrl"],
+            timeout=2,
+        )
+        return res.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def undo_last_replacement(force: bool = False) -> tuple:
+    """
+    Hoàn tác lần thay thế gần nhất bằng Ctrl+Z.
+
+    Trả về ``(thành_công, thông_điệp)``. Nếu cửa sổ hiện tại khác cửa sổ đã
+    thay thế, từ chối trừ khi ``force=True`` để tránh Ctrl+Z nhầm ứng dụng.
+    """
+    record = store.last_replacement()
+    if not record:
+        return False, "Không có lần thay thế nào để hoàn tác."
+
+    current_app = _focused_app_id()
+    recorded_app = (record.get("app_id") or "").lower()
+    if (
+        not force
+        and recorded_app
+        and current_app
+        and recorded_app != current_app
+    ):
+        return (
+            False,
+            "Cửa sổ đang focus khác cửa sổ đã thay thế "
+            f"({recorded_app} → {current_app}). Dùng --undo --force nếu chắc chắn.",
+        )
+
+    # Trong terminal, Ctrl+Z là SIGTSTP (tạm dừng tiến trình), không phải undo.
+    # Tuyệt đối không gửi tổ hợp này vào terminal.
+    target_app = recorded_app or current_app
+    if _is_terminal(target_app):
+        set_clipboard_text(record["original_text"])
+        return (
+            False,
+            "Cửa sổ đích là terminal nên không gửi Ctrl+Z (sẽ tạm dừng tiến "
+            "trình). Đã sao chép bản gốc vào clipboard — hãy dán thủ công "
+            "bằng Ctrl+Shift+V.",
+        )
+
+    if not _send_ctrl_z():
+        # Không thể gửi phím: ít nhất đưa bản gốc vào clipboard để dán thủ công.
+        set_clipboard_text(record["original_text"])
+        return (
+            False,
+            "Không gửi được Ctrl+Z (thiếu wtype?). Đã sao chép bản gốc vào "
+            "clipboard — hãy dán thủ công rồi chạy lại nếu cần.",
+        )
+
+    store.mark_replacement_undone(record["id"])
+    set_clipboard_text(record["original_text"])
+    return True, "Đã hoàn tác lần thay thế gần nhất."
 
 
 def _cache_dir() -> str:
@@ -247,7 +327,14 @@ def show_in_launcher(orig: str, trans: str, src_lang: str = "auto",
         return "copied"
 
     if selected.startswith("✍️ [Thay thế tại chỗ]"):
-        replace_selection_in_place(trans, focus_delay=0.35)
+        replace_selection_in_place(
+            trans,
+            focus_delay=0.35,
+            original=orig,
+            src_lang=src_lang,
+            tgt_lang=tgt_lang,
+            engine=engine_name,
+        )
         return "replaced"
 
     if selected.startswith("🧠 [Phân tích AI]"):

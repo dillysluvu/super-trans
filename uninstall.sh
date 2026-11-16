@@ -13,6 +13,8 @@ NIRI_CONFIG="$NIRI_CONFIG_DIR/config.kdl"
 NIRI_TRANS_KDL="$NIRI_CONFIG_DIR/dms/trans.kdl"
 CONFIG_DIR="$HOME/.config/super-trans"
 CACHE_DIR="$HOME/.cache/super-trans"
+DATA_DIR="$HOME/.local/share/super-trans"
+NATIVE_DIR="$HOME/.local/lib/super-trans"
 
 PURGE=0
 for arg in "$@"; do
@@ -20,7 +22,7 @@ for arg in "$@"; do
         --purge) PURGE=1 ;;
         --help|-h)
             echo "Cách dùng: ./uninstall.sh [--purge]"
-            echo "  --purge  Xóa cả cấu hình ~/.config/super-trans và cache phân tích"
+            echo "  --purge  Xóa cả cấu hình, cache phân tích và lịch sử SQLite"
             exit 0
             ;;
         *)
@@ -62,12 +64,20 @@ if [ -f "$NIRI_CONFIG" ]; then
     fi
 fi
 
-# 3. Tùy chọn xóa cấu hình và cache
+# 3. Xóa helper Rust do installer cài (không đụng tới thư mục khác)
+if [ -f "$NATIVE_DIR/super-trans-native" ]; then
+    rm -f "$NATIVE_DIR/super-trans-native"
+    rmdir "$NATIVE_DIR" 2>/dev/null || true
+    echo "  ✅ Đã xóa helper Rust."
+fi
+
+# 4. Tùy chọn xóa cấu hình, cache và lịch sử
 if [ "$PURGE" -eq 1 ]; then
-    rm -rf "$CONFIG_DIR" "$CACHE_DIR"
-    echo "  ✅ Đã xóa cấu hình và cache phân tích."
+    rm -rf "$CONFIG_DIR" "$CACHE_DIR" "$DATA_DIR"
+    echo "  ✅ Đã xóa cấu hình, cache phân tích và lịch sử SQLite."
 else
     echo "  ℹ️  Giữ lại cấu hình tại $CONFIG_DIR (dùng --purge để xóa)."
+    echo "  ℹ️  Giữ lại lịch sử tại $DATA_DIR (dùng --purge để xóa)."
 fi
 
 echo "🎉 Đã hoàn tất gỡ cài đặt SuperTrans."

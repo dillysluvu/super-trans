@@ -33,7 +33,7 @@ echo "🚀 Bắt đầu thiết lập SuperTrans..."
 
 # 0. Kiểm tra phụ thuộc
 MISSING=()
-for cmd in python3 wl-copy wtype slurp grim tesseract; do
+for cmd in python3 wl-paste wl-copy wtype slurp grim tesseract; do
     command -v "$cmd" >/dev/null 2>&1 || MISSING+=("$cmd")
 done
 if [ "${#MISSING[@]}" -gt 0 ]; then
@@ -43,6 +43,16 @@ if [ "${#MISSING[@]}" -gt 0 ]; then
 fi
 if ! command -v dms >/dev/null 2>&1; then
     echo "  ℹ️  Không thấy DMS CLI — sẽ dùng fuzzel/notify-send làm phương án dự phòng."
+fi
+
+# Kiểm tra backend tăng cường ảnh OCR (tùy chọn, OCR vẫn chạy nếu thiếu)
+if python3 -c 'import PIL' >/dev/null 2>&1; then
+    echo "  ✅ Tăng cường ảnh OCR: Pillow"
+elif command -v magick >/dev/null 2>&1 || command -v convert >/dev/null 2>&1; then
+    echo "  ✅ Tăng cường ảnh OCR: ImageMagick"
+else
+    echo "  ℹ️  Không có Pillow/ImageMagick — OCR vẫn chạy nhưng không tăng cường ảnh."
+    echo "     Cài thêm: sudo dnf install python3-pillow   (khuyến nghị)"
 fi
 
 # 1. Tạo thư mục ~/.local/bin và liên kết thực thi
@@ -58,7 +68,29 @@ case ":$PATH:" in
        echo '       export PATH="$HOME/.local/bin:$PATH"' ;;
 esac
 
-# 2. Cài đặt gói OCR đa ngôn ngữ (Anh, Pháp, Trung, Việt)
+# 2. Build helper Rust tùy chọn (tăng tốc chia văn bản dài)
+NATIVE_DIR="$HOME/.local/lib/super-trans"
+if command -v cargo >/dev/null 2>&1; then
+    echo "  🦀 Đang build helper Rust..."
+    mkdir -p "$NATIVE_DIR"
+    if cargo build --release --manifest-path "$SCRIPT_DIR/native/Cargo.toml" >/dev/null 2>&1; then
+        install -m 755 "$SCRIPT_DIR/native/target/release/super-trans-native" \
+            "$NATIVE_DIR/super-trans-native"
+        echo "  ✅ Đã cài helper Rust: $NATIVE_DIR/super-trans-native"
+    elif command -v rustc >/dev/null 2>&1 \
+        && rustc -O -o "$NATIVE_DIR/super-trans-native" \
+            "$SCRIPT_DIR/native/src/main.rs" >/dev/null 2>&1; then
+        chmod 755 "$NATIVE_DIR/super-trans-native"
+        echo "  ✅ Đã cài helper Rust bằng rustc: $NATIVE_DIR/super-trans-native"
+    else
+        rmdir "$NATIVE_DIR" 2>/dev/null || true
+        echo "  ⚠️  Build Rust thất bại — SuperTrans vẫn dùng Python để chia văn bản."
+    fi
+else
+    echo "  ℹ️  Không có cargo — bỏ qua helper Rust (mọi tính năng vẫn hoạt động)."
+fi
+
+# 3. Cài đặt gói OCR đa ngôn ngữ (Anh, Pháp, Trung, Việt)
 mkdir -p "$TESSDATA_DIR"
 
 # Liên kết gói tiếng Anh có sẵn của hệ thống (Fedora/Debian)
@@ -93,7 +125,7 @@ for lang in eng fra chi_sim vie; do
 done
 echo "  ✅ Đã sẵn sàng OCR cho Tiếng Anh, Pháp, Trung, Việt"
 
-# 3. Tạo cấu hình phím tắt cho Niri
+# 4. Tạo cấu hình phím tắt cho Niri
 if [ "$INSTALL_NIRI" -eq 1 ]; then
     mkdir -p "$NIRI_CONFIG_DIR/dms"
     cat > "$NIRI_TRANS_KDL" << 'EOF'
@@ -110,6 +142,11 @@ binds {
     // ✍️ Bôi đen text và nhấn Mod+Alt+R để THAY THẾ TRỰC TIẾP tại chỗ (In-place replace)
     Mod+Alt+R allow-inhibiting=false hotkey-overlay-title="SuperTrans: Thay thế văn bản tại chỗ (In-place)" {
         spawn "super-trans" "--replace";
+    }
+
+    // ↩️ Nhấn Mod+Alt+Z để hoàn tác lần thay thế tại chỗ gần nhất (Ctrl+Z)
+    Mod+Alt+Z allow-inhibiting=false hotkey-overlay-title="SuperTrans: Hoàn tác thay thế gần nhất" {
+        spawn "super-trans" "--undo";
     }
 
     // 🤖 Bôi đen text và nhấn Mod+Alt+A để phân tích chuyên sâu OpenCode AI trong DMS Notepad
@@ -130,7 +167,7 @@ binds {
 EOF
     echo "  ✅ Đã tạo file phím tắt Niri: $NIRI_TRANS_KDL"
 
-    # 4. Kiểm tra include trong config.kdl
+    # 5. Kiểm tra include trong config.kdl
     if [ -f "$NIRI_CONFIG" ]; then
         if ! grep -q "dms/trans.kdl" "$NIRI_CONFIG"; then
             # Đảm bảo file kết thúc bằng newline trước khi nối thêm include
@@ -158,16 +195,16 @@ EOF
     fi
 fi
 
-# 5. Gửi thông báo hoàn tất
+# 6. Gửi thông báo hoàn tất
 if command -v dms >/dev/null 2>&1; then
     timeout 3 dms notify -a "SuperTrans" -i "accessories-dictionary" \
         "🌐 SuperTrans đã sẵn sàng!" \
-        "Phím tắt: Mod+Alt+T (Bôi đen), Mod+Alt+A (AI), Mod+Alt+O (OCR), Mod+Alt+I (Nhập)" \
+        "Phím tắt: Mod+Alt+T (Dịch), Mod+Alt+R (Thay thế), Mod+Alt+Z (Hoàn tác), Mod+Alt+O (OCR)" \
         >/dev/null 2>&1 || true
 elif command -v notify-send >/dev/null 2>&1; then
     notify-send -a "SuperTrans" -i "accessories-dictionary" \
         "🌐 SuperTrans đã sẵn sàng!" \
-        "Phím tắt: Mod+Alt+T (Bôi đen), Mod+Alt+A (AI), Mod+Alt+O (OCR), Mod+Alt+I (Nhập)" \
+        "Phím tắt: Mod+Alt+T (Dịch), Mod+Alt+R (Thay thế), Mod+Alt+Z (Hoàn tác), Mod+Alt+O (OCR)" \
         2>/dev/null || true
 fi
 
@@ -178,7 +215,10 @@ if [ "$INSTALL_NIRI" -eq 1 ]; then
     echo "  - Toàn hệ thống (Phím tắt Niri):"
     echo "      * Mod+Alt+T : Bôi đen chữ và dịch nhanh trong DMS Launcher (~150ms)"
     echo "      * Mod+Alt+R : Dịch và thay thế trực tiếp tại chỗ (không cửa sổ)"
+    echo "      * Mod+Alt+Z : Hoàn tác lần thay thế gần nhất (Ctrl+Z)"
     echo "      * Mod+Alt+A : Phân tích chuyên sâu bằng OpenCode AI trong DMS Notepad"
     echo "      * Mod+Alt+O : Chụp vùng màn hình và dịch OCR"
     echo "      * Mod+Alt+I : Mở ô nhập văn bản cần dịch"
+    echo "  - Lịch sử/cache: trans --history | trans --search \"...\" | trans --stats"
+    echo "  - Chẩn đoán     : trans --doctor"
 fi

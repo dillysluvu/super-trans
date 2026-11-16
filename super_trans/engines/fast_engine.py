@@ -15,6 +15,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Tuple
 
+from super_trans.core import native
 from super_trans.engines.base import TranslationEngine
 
 MAX_CHUNK_CHARS = 1800
@@ -36,6 +37,11 @@ class FastEngine(TranslationEngine):
             return []
         if len(text) <= limit:
             return [text]
+
+        # Văn bản dài: thử helper Rust trước, fallback thuần Python bên dưới.
+        native_chunks = native.split_text(text, limit)
+        if native_chunks:
+            return native_chunks
 
         chunks: List[str] = []
         remaining = text

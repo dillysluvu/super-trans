@@ -2,35 +2,49 @@
 
 > **Hợp tác phát triển giữa Antigravity AI và OpenCode AI**, tối ưu hóa riêng cho **Fedora Linux, Niri Wayland Compositor và DMS Shell**.
 
+SuperTrans sống trong hệ thống thay vì mở thêm một cửa sổ rời rạc: bôi đen chữ, nhấn phím tắt, nhận bản dịch ngay trong DMS Launcher/Notepad hoặc dán đè trực tiếp tại con trỏ. Bản dịch được cache cục bộ, có lịch sử, có thể hoàn tác, và OCR được tăng cường trước khi nhận diện.
+
 ---
 
-## ✨ Triết lý thiết kế ("Tối giản – Đồng nhất – Tận dụng tiện ích có sẵn")
+## ✨ Tính năng chính
 
-Thay vì hiển thị thông báo hay pop-up rời rạc gây rối mắt, **SuperTrans** kết hợp trực tiếp vào **các tiện ích sẵn có của hệ thống DMS**:
+### 1. Dịch thuật tích hợp DMS
 
-1. **DMS Launcher / Spotlight (`dms dmenu`)**
-   - Kết quả dịch hiện ngay trong cửa sổ tìm kiếm quen thuộc (`Mod+D`).
-   - Dùng chung font chữ, hiệu ứng mờ, màu theme và điều hướng phím của DMS.
-   - Các hành động: **Sao chép bản dịch**, **Thay thế tại chỗ**, **Phân tích AI**, **Xem bản gốc**.
+- **DMS Launcher / Spotlight (`dms dmenu`)**: kết quả hiện trong cửa sổ tìm kiếm quen thuộc (`Mod+D`), dùng chung font, hiệu ứng mờ và màu theme.
+- **DMS Notepad**: phân tích chuyên sâu của OpenCode AI được lưu thành Markdown và mở trong Notepad.
+- **DMS Clipboard**: bản dịch tự động nằm trong lịch sử clipboard.
+- **DMS Toast / Notification**: hiển thị không xâm lấn khi cần.
+- Cơ chế dự phòng: `dms dmenu` → `fuzzel`, `dms clipboard` → `wl-copy` + `wtype`, `dms notify` → `notify-send`, DMS Notepad → `xdg-open`.
 
-2. **Thay thế tại chỗ vô hình (`dms clipboard send-paste` / `wtype`)**
-   - Bôi đen câu tiếng Anh/Pháp/Trung ➔ nhấn `Mod+Alt+R` ➔ văn bản được dịch và thay thế ngay tại con trỏ.
-   - Tự nhận biết terminal để dùng `Ctrl+Shift+V` thay vì `Ctrl+V`.
-   - **0 thông báo, 0 cửa sổ phụ**, trải nghiệm liền mạch như tính năng hệ điều hành.
+### 2. Thay thế tại chỗ an toàn + Hoàn tác
 
-3. **DMS Notepad**
-   - Bài phân tích chuyên sâu của OpenCode AI (thành ngữ, điển tích, ngữ pháp, sắc thái) được lưu thành Markdown và mở trong **DMS Notepad**.
-   - Không mở thêm Launcher trùng lặp khi Notepad đã hiển thị kết quả.
+- Bôi đen câu tiếng Anh/Pháp/Trung → `Mod+Alt+R` → văn bản được dịch và dán đè ngay tại con trỏ, không mở cửa sổ.
+- Tự nhận biết terminal để dùng `Ctrl+Shift+V` thay vì `Ctrl+V`.
+- **Chỉ dùng PRIMARY selection** cho `--replace`, tránh dán nhầm clipboard cũ. Muốn dùng clipboard, phải chỉ định rõ `--clipboard`.
+- **Lưu lần thay thế gần nhất** vào SQLite. `trans --undo` (hoặc `Mod+Alt+Z`) gửi `Ctrl+Z` để khôi phục; nếu cửa sổ đang focus khác cửa sổ đã thay thế, SuperTrans từ chối để tránh undo nhầm.
+- Trong **terminal**, SuperTrans không gửi `Ctrl+Z` (vì đó là tín hiệu tạm dừng tiến trình) mà sao chép bản gốc vào clipboard để bạn dán thủ công bằng `Ctrl+Shift+V`.
 
-4. **DMS Clipboard Manager**
-   - Mọi bản dịch tự động nằm trong lịch sử clipboard của DMS, sẵn sàng dán bất cứ lúc nào.
+### 3. Cache & lịch sử SQLite
 
-5. **Cơ chế dự phòng thông minh**
-   - `dms dmenu` ➔ `fuzzel`
-   - `dms clipboard` ➔ `wl-copy` + `wtype`
-   - `dms notify` ➔ `notify-send`
-   - `DMS Notepad` ➔ `xdg-open` ➔ notification
-   - FastEngine ➔ OpenCode AI lỗi thì tự quay về FastEngine, không làm gián đoạn công việc.
+- Cache bản dịch theo `(văn bản, ngôn ngữ nguồn, ngôn ngữ đích, engine)`.
+- Lặp lại cùng một câu sẽ trả kết quả tức thì, không gọi mạng.
+- Lưu lịch sử để xem, tìm kiếm, thống kê và dọn dẹp.
+- Dữ liệu nằm trong `~/.local/share/super-trans/history.db`, quyền `0600`, không gửi đi đâu cả.
+- Tắt cache cho một lần chạy bằng `--no-cache`; buộc dịch lại bằng `--refresh`.
+
+### 4. OCR mạnh hơn
+
+- Chụp vùng màn hình bằng `slurp` + `grim`, nhận diện bằng Tesseract.
+- **Tăng cường ảnh** trước OCR: chuyển xám, tự đảo màu cho dark mode, cân bằng tương phản, làm nét, phóng to ảnh nhỏ và thêm viền trắng.
+- Hỗ trợ OCR **file ảnh có sẵn** (`--ocr-file`) và **ảnh trong clipboard** (`--ocr-clipboard`).
+- Tự chọn thư mục `tessdata` có nhiều ngôn ngữ nhất và lọc bỏ gói chưa cài.
+- Hỗ trợ tiếng Anh, Pháp, Trung giản thể, Việt.
+
+### 5. Helper Rust tùy chọn
+
+- Helper `super-trans-native` chia văn bản rất dài thành đoạn trước khi gửi dịch.
+- Build tự động nếu máy có `cargo`; nếu không, SuperTrans dùng thuần Python và mọi tính năng vẫn hoạt động.
+- **Lưu ý hiệu năng:** độ trễ dịch chủ yếu đến từ mạng (Google GTX) và Tesseract. Rust chỉ giúp phần chia văn bản lớn nhanh hơn, không làm bản thân bản dịch nhanh hơn.
 
 ---
 
@@ -38,19 +52,22 @@ Thay vì hiển thị thông báo hay pop-up rời rạc gây rối mắt, **Sup
 
 | Thành phần | Vai trò | Ghi chú |
 |---|---|---|
-| `python3` | Chạy SuperTrans | Bắt buộc |
-| `wl-clipboard` | Đọc/ghi clipboard Wayland | Khuyến nghị |
-| `wtype` | Dự phòng dán tại chỗ | Khuyến nghị |
+| `python3` | Chạy SuperTrans | Bắt buộc (>= 3.9) |
+| `wl-clipboard` (`wl-paste`, `wl-copy`) | Đọc/ghi clipboard, PRIMARY | Khuyến nghị |
+| `wtype` | Dự phòng dán tại chỗ và gửi `Ctrl+Z` | Khuyến nghị |
 | `slurp`, `grim`, `tesseract` | OCR vùng màn hình | Cần cho `--ocr` |
 | `dms` | Launcher, Notepad, Clipboard, Toast | Tùy chọn, có fallback |
 | `fuzzel` | Fallback Launcher | Tùy chọn |
 | `opencode` | Engine AI | Cần cho `-e ai` |
+| Pillow hoặc ImageMagick | Tăng cường ảnh OCR | Tùy chọn, khuyến nghị |
+| `cargo` / `rustc` | Build helper Rust | Tùy chọn |
 | GTK4 + `gtk4-layer-shell` | Thẻ OSD nổi | Tùy chọn cho `--output osd` |
 
 Cài đặt gói cơ bản trên Fedora:
 
 ```bash
 sudo dnf install python3 wl-clipboard wtype slurp grim tesseract
+sudo dnf install python3-pillow   # khuyến nghị cho OCR
 ```
 
 ---
@@ -58,7 +75,7 @@ sudo dnf install python3 wl-clipboard wtype slurp grim tesseract
 ## 🚀 Cài đặt
 
 ```bash
-git clone <repository-url> ~/trans
+git clone https://github.com/dillysluvu/super-trans.git ~/trans
 cd ~/trans
 ./install.sh
 ```
@@ -66,6 +83,7 @@ cd ~/trans
 Trình cài đặt sẽ:
 
 - Liên kết lệnh `super-trans` và `trans` vào `~/.local/bin`.
+- Build helper Rust vào `~/.local/lib/super-trans/super-trans-native` nếu có `cargo`.
 - Tải các gói OCR `fra`, `chi_sim`, `vie` vào `~/.local/share/tessdata` (nếu thiếu).
 - Tạo phím tắt Niri tại `~/.config/niri/dms/trans.kdl` và thêm include vào `config.kdl`.
 - Nạp lại cấu hình Niri nếu `niri validate` thành công.
@@ -76,17 +94,18 @@ Chỉ cài CLI, không tạo phím tắt Niri:
 ./install.sh --no-niri
 ```
 
-Cài đặt như một gói Python (tùy chọn, dùng pipx):
+Cài như một gói Python (tùy chọn, dùng pipx):
 
 ```bash
-pipx install .
+pipx install .            # CLI + OCR cơ bản
+pipx install '.[ocr]'     # kèm Pillow để tăng cường ảnh
 ```
 
 Gỡ cài đặt:
 
 ```bash
-./uninstall.sh          # Giữ lại cấu hình
-./uninstall.sh --purge  # Xóa cả cấu hình và cache phân tích
+./uninstall.sh          # Giữ cấu hình và lịch sử
+./uninstall.sh --purge  # Xóa cả cấu hình, cache và lịch sử SQLite
 ```
 
 ---
@@ -95,11 +114,12 @@ Gỡ cài đặt:
 
 | Phím tắt | Chức năng | Cơ chế hoạt động |
 |---|---|---|
-| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>T</kbd> | **Xem bản dịch trong DMS Launcher** | Bôi đen text ➔ mở menu kết quả trong Spotlight (Copy, Dán đè, Phân tích AI). |
-| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>R</kbd> | **Thay thế trực tiếp tại chỗ** | Bôi đen text ➔ dịch và dán đè ngay tại con trỏ, không hiện thông báo. |
-| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>A</kbd> | **Phân tích chuyên sâu** | OpenCode AI phân tích thành ngữ, điển tích, ngữ pháp và mở trong DMS Notepad. |
-| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>O</kbd> | **Chụp vùng màn hình OCR** | Kéo chuột quét ảnh/video (Anh, Pháp, Trung) ➔ mở kết quả trong DMS Launcher. |
-| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>I</kbd> | **Hộp thoại nhập liệu nhanh** | Mở thanh nhập liệu DMS Launcher để gõ câu cần dịch. |
+| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>T</kbd> | **Xem bản dịch trong DMS Launcher** | Bôi đen text → menu kết quả (Copy, Dán đè, Phân tích AI). |
+| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>R</kbd> | **Thay thế trực tiếp tại chỗ** | Bôi đen text → dịch và dán đè, không hiện thông báo. |
+| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>Z</kbd> | **Hoàn tác thay thế gần nhất** | Gửi `Ctrl+Z` tới cửa sổ đã thay thế. |
+| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>A</kbd> | **Phân tích chuyên sâu** | OpenCode AI phân tích thành ngữ, ngữ pháp, sắc thái trong DMS Notepad. |
+| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>O</kbd> | **OCR vùng màn hình** | Kéo chuột quét ảnh/video → mở kết quả trong DMS Launcher. |
+| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>I</kbd> | **Hộp thoại nhập liệu nhanh** | Mở thanh nhập liệu DMS Launcher. |
 
 *(Phím `Mod` là `Super` / `Windows` trên bàn phím.)*
 
@@ -116,9 +136,16 @@ trans "非常感谢您的宝贵建议"
 # Nhận dữ liệu từ pipe
 echo "Artificial Intelligence" | trans
 
-# Thay thế trực tiếp văn bản đang bôi đen
+# Thay thế văn bản đang bôi đen (chỉ PRIMARY)
 trans --replace
 trans -r
+
+# Thay thế từ clipboard (chỉ định rõ)
+trans --replace --clipboard
+
+# Hoàn tác lần thay thế gần nhất
+trans --undo
+trans --undo --force
 
 # Mở kết quả trong DMS Launcher
 trans --selection --output launcher
@@ -130,11 +157,26 @@ trans -e ai "塞翁失马"
 trans -e ai --no-popup "塞翁失马"
 trans -e ai --output none "塞翁失马"
 
-# OCR vùng màn hình với ngôn ngữ tùy chọn
+# OCR vùng màn hình, file ảnh hoặc clipboard
+trans --ocr
 trans --ocr --ocr-lang "eng+vie"
+trans --ocr-file screenshot.png
+trans --ocr-clipboard
+trans --ocr-file scan.png --no-ocr-preprocess
 
-# Hiển thị bằng thẻ OSD nổi thay vì Launcher
-trans --output osd "Good morning"
+# Lịch sử, tìm kiếm, thống kê
+trans --history
+trans --history 30
+trans --search "thank you"
+trans --stats
+
+# Bỏ qua cache hoặc buộc dịch lại
+trans --no-cache "Hello"
+trans --refresh "Hello"
+
+# Dọn dẹp và chẩn đoán
+trans --clear-history --yes
+trans --doctor
 ```
 
 ### Các tùy chọn chính
@@ -142,15 +184,30 @@ trans --output osd "Good morning"
 | Tùy chọn | Mô tả |
 |---|---|
 | `-s`, `--selection` | Lấy văn bản đang bôi đen (PRIMARY) hoặc clipboard. |
+| `--clipboard` | Dùng clipboard làm nguồn; bắt buộc nếu muốn `--replace` từ clipboard. |
 | `-r`, `--replace` | Dịch và thay thế trực tiếp tại vị trí con trỏ. |
 | `-o`, `--ocr` | Kéo chuột chụp vùng màn hình và OCR. |
+| `--ocr-file PATH` | OCR một file ảnh có sẵn. |
+| `--ocr-clipboard` | OCR ảnh đang có trong clipboard. |
 | `--ocr-lang` | Ghi đè ngôn ngữ Tesseract, ví dụ `eng+fra+chi_sim+vie`. |
+| `--ocr-psm` | Page Segmentation Mode của Tesseract (0–13). |
+| `--ocr-preprocess` / `--no-ocr-preprocess` | Bật/tắt tăng cường ảnh cho lần chạy. |
 | `-i`, `--input` | Mở ô nhập liệu nhanh qua DMS Launcher. |
 | `-e`, `--engine` | `fast` (Google GTX) hoặc `ai` (OpenCode). |
 | `-m`, `--output` | `launcher`, `replace`, `osd`, `dms_toast`, `notification`, `none`. |
 | `--from`, `--to` | Chỉ định ngôn ngữ nguồn/đích. |
 | `--no-copy` | Không tự động sao chép kết quả vào clipboard. |
 | `--no-popup` | Không mở DMS Notepad khi dùng engine AI. |
+| `--no-cache` | Không đọc/ghi cache cho lần dịch này. |
+| `--refresh` | Bỏ qua cache, dịch lại rồi cập nhật cache. |
+| `--history [N]` | Xem N bản dịch gần nhất (mặc định 15). |
+| `--search TỪ` | Tìm trong lịch sử. |
+| `--stats` | Thống kê cache/lịch sử. |
+| `--clear-history --yes` | Xóa toàn bộ lịch sử và cache. |
+| `--undo` | Hoàn tác lần thay thế gần nhất. |
+| `--force` | Cho phép undo dù cửa sổ đang focus khác. |
+| `--doctor` | Kiểm tra phụ thuộc, OCR, cache và helper Rust. |
+| `--verbose` | In thông tin chẩn đoán ra stderr. |
 
 ---
 
@@ -169,7 +226,11 @@ File cấu hình: `~/.config/super-trans/config.json`
   "auto_copy_to_clipboard": true,
   "notification_timeout_ms": 6000,
   "show_popup_on_ai": true,
-  "ocr_lang": "eng+fra+chi_sim+vie"
+  "ocr_lang": "eng+fra+chi_sim+vie",
+  "ocr_preprocess": true,
+  "ocr_psm": 3,
+  "cache_enabled": true,
+  "history_limit": 500
 }
 ```
 
@@ -184,6 +245,10 @@ File cấu hình: `~/.config/super-trans/config.json`
 | `auto_copy_to_clipboard` | Tự động đưa bản dịch vào clipboard/DMS Clipboard. |
 | `show_popup_on_ai` | Mở DMS Notepad khi dùng engine AI. |
 | `ocr_lang` | Danh sách ngôn ngữ Tesseract mặc định. |
+| `ocr_preprocess` | Bật tăng cường ảnh trước OCR. |
+| `ocr_psm` | Page Segmentation Mode mặc định (0–13). |
+| `cache_enabled` | Bật cache + lịch sử SQLite. |
+| `history_limit` | Số mục lịch sử tối đa giữ lại (10–10000). |
 
 Giá trị `output_mode`:
 
@@ -196,6 +261,20 @@ Giá trị `output_mode`:
 
 ---
 
+## 💾 Cache, lịch sử và quyền riêng tư
+
+- Database: `~/.local/share/super-trans/history.db` (SQLite, chmod `0600`).
+- Bảng `translations`: cache + lịch sử bản dịch.
+- Bảng `replacements`: lần thay thế gần nhất và trạng thái hoàn tác.
+- Cache key gồm văn bản gốc, ngôn ngữ nguồn/đích và engine (với AI là model cụ thể).
+- Lịch sử lưu **văn bản gốc dạng plaintext** để bạn có thể tìm kiếm. Nếu dịch nội dung nhạy cảm:
+  - Dùng `--no-cache` cho lần dịch đó, hoặc
+  - Đặt `"cache_enabled": false`, hoặc
+  - Chạy `trans --clear-history --yes` sau khi dùng.
+- Cache tự dọn bớt theo `history_limit`; không có dữ liệu nào được gửi lên máy chủ nào ngoài engine dịch bạn chọn.
+
+---
+
 ## 🧠 Cách hoạt động của engine AI
 
 - `trans -e ai "..."` gọi OpenCode với prompt yêu cầu **bản dịch sạch** và **phân tích Markdown**.
@@ -203,6 +282,7 @@ Giá trị `output_mode`:
 - Mặc định, khi Notepad đã mở, SuperTrans **không mở thêm Launcher** để tránh trùng lặp.
 - Nếu chỉ định rõ `--output` (ví dụ `--output launcher`), SuperTrans dùng bản dịch sạch và bỏ qua Notepad.
 - Nếu OpenCode lỗi hoặc quá thời gian, SuperTrans tự chuyển sang FastEngine và báo lỗi ra stderr.
+- Bản dịch AI sạch cũng được cache; lần sau `-e ai --no-popup` có thể trả ngay từ cache.
 
 ---
 
@@ -210,22 +290,45 @@ Giá trị `output_mode`:
 
 - `install.sh` tự tải `fra`, `chi_sim`, `vie` (và `eng` nếu chưa có) vào `~/.local/share/tessdata`.
 - SuperTrans tự chọn thư mục tessdata có nhiều ngôn ngữ nhất và **lọc bỏ ngôn ngữ chưa cài** thay vì để Tesseract báo lỗi.
-- Vùng chọn được chụp bằng `slurp` + `grim`, sau đó nhận diện bằng `tesseract`.
+- Ảnh đầu vào được tăng cường bằng Pillow (ưu tiên) hoặc ImageMagick:
+  - ảnh xám, đảo màu cho dark mode, autocontrast, unsharp mask, phóng to ảnh nhỏ, viền trắng.
+- Ba chế độ đầu vào: vùng màn hình (`--ocr`), file (`--ocr-file`), clipboard (`--ocr-clipboard`).
 - Nhấn `Esc` khi chọn vùng để hủy mà không báo lỗi.
+- Ảnh tạm được xóa ngay sau khi OCR.
+
+---
+
+## 🦀 Helper Rust (tùy chọn)
+
+```bash
+# Build thủ công
+cargo build --release --manifest-path native/Cargo.toml
+
+# Kiểm tra SuperTrans nhận helper chưa
+trans --doctor
+```
+
+- Helper chỉ có một nhiệm vụ: chia văn bản dài thành đoạn ≤ giới hạn, ưu tiên xuống dòng → cuối câu → khoảng trắng → cắt cứng.
+- Python tự động dùng helper khi văn bản ≥ 4000 ký tự; nếu helper lỗi hoặc chưa build, quay về thuần Python.
+- Kết quả được kiểm tra lại (không mất nội dung) trước khi dùng.
+- **Không kỳ vọng Rust làm dịch nhanh hơn đáng kể**: thời gian chủ yếu nằm ở request mạng và OCR. Rust hữu ích khi dịch tài liệu rất lớn và muốn giảm thời gian xử lý chuỗi.
 
 ---
 
 ## 🧪 Kiểm thử
 
 ```bash
-# Toàn bộ kiểm thử offline (mock mạng)
+# Toàn bộ kiểm thử offline (mock mạng, DB tạm)
 python3 -m unittest discover -s tests -v
 
 # Kiểm thử tích hợp thật với Google Translate
 SUPERTRANS_LIVE_TESTS=1 python3 -m unittest discover -s tests -v
+
+# Kiểm thử helper Rust (nếu có cargo)
+cargo test --manifest-path native/Cargo.toml
 ```
 
-Bộ kiểm thử bao quát: nhận diện Việt/Pháp/Trung, chia nhỏ văn bản dài, parse phản hồi dịch, retry mạng, lọc ngôn ngữ OCR, trạng thái DMS dmenu (OK/cancel/không khả dụng), và logic tránh mở trùng Notepad + Launcher.
+Bộ kiểm thử bao quát: nhận diện Việt/Pháp/Trung, chia nhỏ văn bản dài (Python + Rust), parse phản hồi dịch, retry mạng, lọc ngôn ngữ OCR, trạng thái DMS dmenu, cache/lịch sử SQLite, undo, an toàn PRIMARY/clipboard, tăng cường ảnh, và logic tránh mở trùng Notepad + Launcher.
 
 ---
 
@@ -241,13 +344,26 @@ Bộ kiểm thử bao quát: nhận diện Việt/Pháp/Trung, chia nhỏ văn b
 - Chạy `niri validate` và `niri msg action load-config-file`.
 - Đảm bảo `~/.local/bin` nằm trong `PATH` của phiên Niri.
 
-**Không dán đè được trong terminal**
-- SuperTrans tự phát hiện terminal và dùng `Ctrl+Shift+V`; nếu terminal có app_id lạ, thêm tên vào `TERMINAL_APP_IDS` trong `super_trans/core/launcher.py`.
+**`--replace` báo không tìm thấy vùng bôi đen**
+- SuperTrans cố ý không dùng clipboard cũ cho `--replace`.
+- Bôi đen lại văn bản, hoặc dùng `trans --replace --clipboard` nếu chắc chắn.
+- Nếu terminal dùng app_id lạ, thêm tên vào `TERMINAL_APP_IDS` trong `super_trans/core/launcher.py`.
+
+**Undo không hoạt động**
+- Undo gửi `Ctrl+Z` qua `wtype`; kiểm tra `command -v wtype`.
+- Nếu cửa sổ đang focus khác cửa sổ đã thay thế, dùng `trans --undo --force`.
+- Trong terminal, SuperTrans **cố ý không gửi `Ctrl+Z`** (sẽ tạm dừng tiến trình) mà copy bản gốc vào clipboard; hãy dán bằng `Ctrl+Shift+V`.
+- Ứng dụng không hỗ trợ undo sẽ không khôi phục được; khi đó SuperTrans đã sao chép bản gốc vào clipboard để dán thủ công.
 
 **OCR báo thiếu ngôn ngữ**
 - Kiểm tra `ls ~/.local/share/tessdata`.
 - Cài gói hệ thống: `sudo dnf install tesseract-langpack-fra tesseract-langpack-chi_sim tesseract-langpack-vie`.
 - Hoặc chạy lại `./install.sh`.
+
+**OCR nhận sai chữ**
+- Thử `trans --ocr --no-ocr-preprocess` nếu ảnh đã sạch.
+- Thử `--ocr-psm 6` cho khối văn bản liền, `--ocr-psm 7` cho một dòng.
+- Cài Pillow để có tăng cường ảnh tốt hơn: `sudo dnf install python3-pillow`.
 
 **OpenCode AI quá chậm**
 - Tăng `ai_timeout_sec` trong cấu hình.
@@ -259,26 +375,45 @@ Bộ kiểm thử bao quát: nhận diện Việt/Pháp/Trung, chia nhỏ văn b
 - Kiểm tra `libgtk4-layer-shell.so`; SuperTrans tự tìm trong các đường dẫn phổ biến và đặt `LD_PRELOAD` khi chạy OSD.
 - Nếu thiếu, SuperTrans tự fallback sang notification.
 
+**Muốn kiểm tra toàn bộ hệ thống**
+```bash
+trans --doctor
+```
+
 ---
 
 ## 📁 Cấu trúc dự án
 
 ```
 super_trans/
-├── cli.py                  # Entry point, thu thập input, chọn engine/output
+├── cli.py                  # Entry point, CLI, cache, lịch sử, doctor
 ├── config.py               # Cấu hình mặc định + kiểm tra hợp lệ
 ├── core/
 │   ├── clipboard.py        # PRIMARY/CLIPBOARD, ưu tiên DMS Clipboard
 │   ├── detector.py         # Nhận diện Việt/Pháp/Trung, chọn ngôn ngữ đích
 │   ├── dms.py              # Lớp tích hợp DMS dùng chung
-│   ├── launcher.py         # DMS Launcher, Notepad, thay thế tại chỗ
+│   ├── image_prep.py       # Tăng cường ảnh OCR (Pillow/ImageMagick)
+│   ├── launcher.py         # DMS Launcher, Notepad, thay thế, undo
+│   ├── native.py           # Cầu nối helper Rust + fallback Python
 │   ├── notifier.py         # OSD, DMS toast, notification
-│   ├── ocr.py              # Slurp + Grim + Tesseract đa ngôn ngữ
-│   └── osd.py              # Thẻ OSD GTK4 Layer Shell
-└── engines/
-    ├── fast_engine.py      # Google GTX, chia nhỏ văn bản dài
-    └── opencode_engine.py  # OpenCode AI: dịch sạch + phân tích
+│   ├── ocr.py              # Slurp + Grim + Tesseract, file/clipboard
+│   ├── osd.py              # Thẻ OSD GTK4 Layer Shell
+│   └── store.py            # SQLite cache, lịch sử, nhật ký thay thế
+├── engines/
+│   ├── fast_engine.py      # Google GTX, chia nhỏ văn bản dài
+│   └── opencode_engine.py  # OpenCode AI: dịch sạch + phân tích
+native/
+├── Cargo.toml
+└── src/main.rs             # Helper Rust chia văn bản dài
+tests/
+└── test_super_trans.py
 ```
+
+---
+
+## 📄 Giấy phép
+
+MIT License. Xem [LICENSE](LICENSE).
 
 ---
 

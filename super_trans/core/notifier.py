@@ -94,7 +94,13 @@ def display_result(original: str, translated: str, src_lang: str = "auto",
         return bool(action)
 
     if mode == "replace":
-        return replace_selection_in_place(translated)
+        return replace_selection_in_place(
+            translated,
+            original=original,
+            src_lang=src_lang,
+            tgt_lang=tgt_lang,
+            engine=engine_name,
+        )
 
     if mode == "osd":
         timeout_sec = max(4.0, timeout_ms / 1000.0)
