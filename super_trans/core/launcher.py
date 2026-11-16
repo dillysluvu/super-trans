@@ -14,7 +14,7 @@ import shutil
 import subprocess
 import time
 
-from super_trans.core import dms, store
+from super_trans.core import dms, presentation, store
 from super_trans.core.clipboard import set_clipboard_text, set_primary_text
 from super_trans.engines.opencode_engine import OpenCodeEngine
 
@@ -289,44 +289,40 @@ def _pick_item(items, prompt: str, placeholder: str = "", lines: int = 0,
 
 def show_in_launcher(orig: str, trans: str, src_lang: str = "auto",
                      tgt_lang: str = "vi", engine_name: str = "Fast",
-                     ai_model: str = None, ai_timeout: float = 120.0) -> str:
+                     ai_model: str = None, ai_timeout: float = 120.0,
+                     analysis: str = "") -> str:
     """
     Hiển thị kết quả dịch trong DMS Launcher / Spotlight (dms dmenu).
-    Người dùng chọn: sao chép, thay thế tại chỗ, hoặc phân tích AI.
+
+    Giao diện chỉ còn một dòng ``gốc : nghĩa`` và các hành động ngắn gọn:
+    sao chép, thay thế tại chỗ, phân tích AI. Bản gốc không lặp lại thành
+    một mục riêng vì đã nằm ngay trong dòng kết quả.
     """
     src_up = src_lang.upper() if src_lang else "AUTO"
     tgt_up = tgt_lang.upper() if tgt_lang else "VI"
-
-    clean_trans = trans.replace("\n", " ").strip()
-    if len(clean_trans) > 100:
-        clean_trans = clean_trans[:97] + "..."
-
-    clean_orig = orig.replace("\n", " ").strip()
-    if len(clean_orig) > 90:
-        clean_orig = clean_orig[:87] + "..."
+    pair = presentation.compact_pair(orig, trans, 160)
 
     items = [
-        f"🌟 [Bản dịch] {clean_trans}",
-        "✍️ [Thay thế tại chỗ] Dán đè vào vị trí đang bôi đen",
-        "🧠 [Phân tích AI] Mở phân tích chuyên sâu trong DMS Notepad",
-        f"📋 [Bản gốc] {clean_orig}",
+        f"📋 {pair}",
+        "✍️ Thay thế",
+        "🧠 Phân tích",
     ]
 
     selected = _pick_item(
         items,
-        prompt=f"Dịch [{src_up} ➔ {tgt_up}]",
-        placeholder="Enter để chọn hành động, Esc để đóng...",
+        prompt=f"{src_up} → {tgt_up}",
+        placeholder="Enter chọn · Esc đóng",
         lines=len(items),
         timeout=90.0,
     )
     if not selected:
         return ""
 
-    if selected.startswith("🌟 [Bản dịch]"):
+    if selected.startswith("📋 "):
         set_clipboard_text(trans)
         return "copied"
 
-    if selected.startswith("✍️ [Thay thế tại chỗ]"):
+    if selected.startswith("✍️ "):
         replace_selection_in_place(
             trans,
             focus_delay=0.35,
@@ -337,20 +333,27 @@ def show_in_launcher(orig: str, trans: str, src_lang: str = "auto",
         )
         return "replaced"
 
-    if selected.startswith("🧠 [Phân tích AI]"):
-        dms.toast(
-            "🧠 SuperTrans",
-            "Đang phân tích bằng OpenCode AI…",
-            "",
-            "trans",
-        )
-        try:
-            engine = OpenCodeEngine(model=ai_model, timeout=ai_timeout)
-            _, analysis, detected_src = engine.analyze(orig, src_lang=src_lang, tgt_lang=tgt_lang)
-        except Exception as exc:  # noqa: BLE001 - cần báo lỗi cho mọi trường hợp
-            analysis = f"## ⚠️ Không thể phân tích bằng OpenCode AI\n\n```\n{exc}\n```"
-            detected_src = src_lang
-            dms.toast("⚠️ SuperTrans", str(exc)[:140], "", "trans")
+    if selected.startswith("🧠 "):
+        detected_src = src_lang
+        if not analysis:
+            dms.toast(
+                "🧠 SuperTrans",
+                "Đang phân tích bằng OpenCode AI…",
+                "",
+                "trans",
+            )
+            try:
+                engine = OpenCodeEngine(model=ai_model, timeout=ai_timeout)
+                _, analysis, detected_src = engine.analyze(
+                    orig, src_lang=src_lang, tgt_lang=tgt_lang,
+                )
+            except Exception as exc:  # noqa: BLE001 - báo lỗi cho mọi trường hợp
+                analysis = (
+                    "## ⚠️ Không thể phân tích bằng OpenCode AI\n\n"
+                    f"```\n{exc}\n```"
+                )
+                detected_src = src_lang
+                dms.toast("⚠️ SuperTrans", str(exc)[:140], "", "trans")
 
         opened = open_in_dms_notepad(orig, analysis, detected_src, tgt_lang)
         if not opened:
@@ -360,10 +363,6 @@ def show_in_launcher(orig: str, trans: str, src_lang: str = "auto",
                 timeout_ms=12000,
             )
         return "opened_notepad"
-
-    if selected.startswith("📋 [Bản gốc]"):
-        set_clipboard_text(orig)
-        return "copied_orig"
 
     # Người dùng gõ nội dung tùy ý: mặc định sao chép bản dịch
     set_clipboard_text(trans)

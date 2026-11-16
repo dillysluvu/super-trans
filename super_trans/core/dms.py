@@ -6,9 +6,10 @@ trực tiếp vào cú pháp IPC/CLI của DMS. Mọi hàm đều an toàn khi D
 hoặc DMS shell không chạy: chúng trả về trạng thái thất bại thay vì ném lỗi.
 """
 
+import json
 import shutil
 import subprocess
-from typing import Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # Trạng thái trả về của dmenu()
 DMENU_OK = "ok"
@@ -99,6 +100,85 @@ def toast(message: str, details: str = "", command: str = "",
         timeout=timeout,
     )
     return bool(result and result.returncode == 0)
+
+
+def _json_result(args: Sequence[str],
+                 timeout: float = 3.0) -> Optional[Any]:
+    """Chạy lệnh IPC trả JSON, trả None nếu lỗi hoặc output không hợp lệ."""
+    result = _run(args, timeout=timeout)
+    if not result or result.returncode != 0:
+        return None
+    try:
+        return json.loads(result.stdout or "")
+    except (TypeError, ValueError):
+        return None
+
+
+def island_available() -> bool:
+    """Kiểm tra Dynamic Island của DMS có sẵn và bật activity hay không."""
+    data = _json_result(["ipc", "call", "islandActivity", "availability"])
+    if not isinstance(data, dict) or not data.get("islandPresent"):
+        return False
+    return bool(data.get("activitiesAvailable", True))
+
+
+def island_publish(source: str, activity_id: str, payload: Dict[str, Any],
+                   timeout: float = 3.0) -> bool:
+    """Đăng một activity lên Dynamic Island; payload gửi qua stdin."""
+    if not source or not activity_id or not isinstance(payload, dict):
+        return False
+    try:
+        encoded = json.dumps(payload, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return False
+
+    result = _run(
+        [
+            "ipc", "call", "islandActivity", "publish",
+            source, activity_id, "-",
+        ],
+        input_text=encoded,
+        timeout=timeout,
+    )
+    return bool(
+        result
+        and result.returncode == 0
+        and "ISLAND_ACTIVITY_PUBLISHED" in (result.stdout or "")
+    )
+
+
+def island_remove(source: str, activity_id: str,
+                  timeout: float = 2.0) -> bool:
+    """Xóa activity khỏi Dynamic Island."""
+    if not source or not activity_id:
+        return False
+    result = _run(
+        ["ipc", "call", "islandActivity", "remove", source, activity_id],
+        timeout=timeout,
+    )
+    return bool(
+        result
+        and result.returncode == 0
+        and "ISLAND_ACTIVITY_REMOVED" in (result.stdout or "")
+    )
+
+
+def island_list(timeout: float = 2.0) -> Optional[List[Dict[str, Any]]]:
+    """Liệt kê activity đang hiển thị; None nếu không đọc được."""
+    data = _json_result(["ipc", "call", "islandActivity", "list"], timeout=timeout)
+    return data if isinstance(data, list) else None
+
+
+def island_poll_actions(source: str,
+                        timeout: float = 2.0) -> List[Dict[str, Any]]:
+    """Lấy các action người dùng vừa bấm trên island của một source."""
+    if not source:
+        return []
+    data = _json_result(
+        ["ipc", "call", "islandActivity", "pollActions", source],
+        timeout=timeout,
+    )
+    return data if isinstance(data, list) else []
 
 
 def notify(title: str, body: str, timeout_ms: int = 6000,

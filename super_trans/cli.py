@@ -60,6 +60,7 @@ def parse_args():
             "Ví dụ:\n"
             "  trans \"Thank you very much\"\n"
             "  trans -e ai \"塞翁失马\"\n"
+            "  trans --selection --output island\n"
             "  trans --selection --output launcher\n"
             "  trans --replace            # Chỉ dùng vùng bôi đen PRIMARY\n"
             "  trans --replace --clipboard  # Cho phép thay thế từ clipboard\n"
@@ -93,13 +94,13 @@ def parse_args():
                         default=None,
                         help="Bật/tắt tăng cường ảnh trước khi OCR (mặc định theo cấu hình)")
 
-    parser.add_argument("-i", "--input", action="store_true", help="Mở hộp thoại nhập liệu nhanh DMS Launcher để gõ văn bản cần dịch")
+    parser.add_argument("-i", "--input", action="store_true", help="Mở hộp thoại nhập liệu nhanh (DMS Launcher/fuzzel) để gõ văn bản cần dịch")
     parser.add_argument("-r", "--replace", action="store_true", help="Thay thế trực tiếp tại chỗ bằng bản dịch (In-place replace qua DMS/wtype)")
     parser.add_argument("-e", "--engine", choices=["fast", "ai"], default=None, help="Bộ máy dịch: 'fast' (tốc độ cao) hoặc 'ai' (OpenCode AI)")
     parser.add_argument("--output", "-m", dest="output_mode",
-                        choices=["launcher", "replace", "osd", "dms_toast", "notification", "none"],
+                        choices=["island", "launcher", "replace", "osd", "dms_toast", "notification", "none"],
                         default=None,
-                        help="Hình thức hiển thị: 'launcher' (DMS Spotlight), 'replace' (Thay thế tại chỗ), 'osd', 'dms_toast', 'notification', 'none'")
+                        help="Hình thức hiển thị: 'island' (Dynamic Island tối giản), 'launcher' (DMS Spotlight), 'replace' (Thay thế tại chỗ), 'osd', 'dms_toast', 'notification', 'none'")
     parser.add_argument("--from", dest="from_lang", default=None, help="Mã ngôn ngữ nguồn (ví dụ: en, fr, zh, vi, auto)")
     parser.add_argument("--to", dest="to_lang", default=None, help="Mã ngôn ngữ đích (mặc định: vi)")
     parser.add_argument("--no-copy", action="store_true", help="Không tự động copy kết quả vào clipboard")
@@ -212,14 +213,15 @@ def _collect_input(args, config) -> Optional[CollectedInput]:
 
 
 def _translate_with_ai(input_text: str, src_lang: str, tgt_lang: str,
-                       config, wants_notepad: bool):
+                       config, wants_notepad: bool,
+                       want_analysis: bool = False):
     """Dịch bằng OpenCode AI, tự động fallback sang FastEngine khi lỗi."""
     engine = OpenCodeEngine(
         model=config.get("ai_model", "opencode/deepseek-v4.1-flash-free"),
         timeout=config.get("ai_timeout_sec", 120),
     )
     try:
-        if wants_notepad:
+        if wants_notepad or want_analysis:
             translated, analysis, detected_src = engine.analyze(
                 input_text, src_lang=src_lang, tgt_lang=tgt_lang
             )
@@ -408,6 +410,8 @@ def _cmd_doctor(config) -> int:
 
     print("\n🪟 Giao diện")
     _check("DMS shell", dms.available(), "dmenu/clipboard/notepad/notify")
+    _check("Dynamic Island", dms.island_available(), "islandActivity")
+    print(f"     Output mặc định: {config.get('output_mode', 'island')}")
     try:
         from super_trans.core.osd import osd_available
         _check("OSD GTK4", osd_available(), "Thẻ nổi Wayland")
@@ -458,7 +462,7 @@ def main() -> int:
 
     # 4. Xác định hình thức hiển thị trước khi dịch (để chọn chế độ AI phù hợp)
     out_mode = "replace" if args.replace else (
-        args.output_mode or config.get("output_mode", "launcher")
+        args.output_mode or config.get("output_mode", "island")
     )
     engine_choice = args.engine or config.get("default_engine", "fast")
 
@@ -468,6 +472,11 @@ def main() -> int:
         and config.get("show_popup_on_ai", True)
         and args.output_mode is None
         and out_mode != "replace"
+    )
+    # Island/Launcher cần ngữ cảnh AI để hiển thị dòng phụ; vẫn không mở Notepad.
+    want_analysis = (
+        engine_choice == "ai"
+        and out_mode in ("island", "launcher")
     )
 
     cache_enabled = bool(config.get("cache_enabled", True)) and not args.no_cache
@@ -506,7 +515,8 @@ def main() -> int:
         if engine_choice == "ai":
             try:
                 translated, analysis, detected_src, active_engine_name = _translate_with_ai(
-                    input_text, src_lang, tgt_lang, config, wants_notepad
+                    input_text, src_lang, tgt_lang, config, wants_notepad,
+                    want_analysis,
                 )
             except Exception as exc:  # FastEngine fallback cũng thất bại
                 print(f"❌ Lỗi dịch: {exc}", file=sys.stderr)
@@ -543,8 +553,8 @@ def main() -> int:
         notepad_opened = open_in_dms_notepad(
             input_text, analysis, detected_src, tgt_lang
         )
-        # Không mở thêm Launcher khi DMS Notepad đã hiển thị đầy đủ kết quả
-        if notepad_opened and args.output_mode is None and out_mode == "launcher":
+        # Không mở thêm island/launcher khi DMS Notepad đã hiển thị đầy đủ.
+        if notepad_opened and args.output_mode is None:
             out_mode = "none"
 
     # 7. Sao chép kết quả vào clipboard nếu được bật
@@ -565,6 +575,8 @@ def main() -> int:
             timeout_ms=timeout_ms,
             ai_model=config.get("ai_model"),
             ai_timeout=config.get("ai_timeout_sec", 120),
+            analysis=analysis,
+            island_timeout_ms=config.get("island_timeout_ms", 10000),
         )
 
     # 9. In ra stdout cho terminal / script

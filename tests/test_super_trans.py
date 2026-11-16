@@ -25,7 +25,10 @@ if proj_dir not in sys.path:
 
 import super_trans.cli as cli
 from super_trans.config import _sanitize
-from super_trans.core import clipboard, dms, image_prep, launcher, native, store
+from super_trans.core import (
+    clipboard, dms, image_prep, island, island_watch, launcher, native,
+    notifier, presentation, store,
+)
 from super_trans.core.clipboard import (
     SOURCE_CLIPBOARD,
     SOURCE_NONE,
@@ -333,9 +336,22 @@ class TestLauncherActions(unittest.TestCase):
         self.assertTrue(launcher.replace_selection_in_place("Xin chào"))
         send_paste.assert_called_once_with(shift=True)
 
+    @mock.patch("super_trans.core.launcher._pick_item", return_value="")
+    def test_launcher_items_are_minimal(self, pick):
+        self.assertEqual(
+            launcher.show_in_launcher("Hello", "Xin chào", "en", "vi"),
+            "",
+        )
+        items = pick.call_args.args[0]
+        self.assertEqual(items, [
+            "📋 Hello : Xin chào",
+            "✍️ Thay thế",
+            "🧠 Phân tích",
+        ])
+
     @mock.patch("super_trans.core.launcher.set_clipboard_text", return_value=True)
     @mock.patch("super_trans.core.launcher._pick_item",
-                return_value="🌟 [Bản dịch] Xin chào")
+                return_value="📋 Hello : Xin chào")
     def test_copy_action(self, _pick, clipboard):
         action = launcher.show_in_launcher("Hello", "Xin chào", "en", "vi")
         self.assertEqual(action, "copied")
@@ -344,7 +360,7 @@ class TestLauncherActions(unittest.TestCase):
     @mock.patch("super_trans.core.launcher.replace_selection_in_place",
                 return_value=True)
     @mock.patch("super_trans.core.launcher._pick_item",
-                return_value="✍️ [Thay thế tại chỗ] Dán đè")
+                return_value="✍️ Thay thế")
     def test_replace_action(self, _pick, replace):
         action = launcher.show_in_launcher("Hello", "Xin chào", "en", "vi")
         self.assertEqual(action, "replaced")
@@ -354,7 +370,7 @@ class TestLauncherActions(unittest.TestCase):
     @mock.patch("super_trans.core.launcher.dms.toast", return_value=True)
     @mock.patch("super_trans.core.launcher.OpenCodeEngine")
     @mock.patch("super_trans.core.launcher._pick_item",
-                return_value="🧠 [Phân tích AI] Mở Notepad")
+                return_value="🧠 Phân tích")
     def test_ai_action(self, _pick, engine_cls, _toast, notepad):
         engine_cls.return_value.analyze.return_value = (
             "Xin chào", "## 🔍 Phân tích", "en"
@@ -362,6 +378,284 @@ class TestLauncherActions(unittest.TestCase):
         action = launcher.show_in_launcher("Hello", "Xin chào", "en", "vi")
         self.assertEqual(action, "opened_notepad")
         notepad.assert_called_once()
+
+    @mock.patch("super_trans.core.launcher.open_in_dms_notepad", return_value=True)
+    @mock.patch("super_trans.core.launcher.OpenCodeEngine")
+    @mock.patch("super_trans.core.launcher._pick_item",
+                return_value="🧠 Phân tích")
+    def test_ai_action_reuses_existing_analysis(
+        self, _pick, engine_cls, notepad
+    ):
+        action = launcher.show_in_launcher(
+            "Hello", "Xin chào", "en", "vi",
+            analysis="## 🔍 Phân tích\n\nNgữ cảnh có sẵn.",
+        )
+        self.assertEqual(action, "opened_notepad")
+        engine_cls.assert_not_called()
+        notepad.assert_called_once()
+        self.assertIn("Ngữ cảnh có sẵn.", notepad.call_args.args[1])
+
+
+class TestPresentation(unittest.TestCase):
+
+    def test_compact_pair(self):
+        self.assertEqual(
+            presentation.compact_pair("Hello", "Xin chào"),
+            "Hello : Xin chào",
+        )
+        pair = presentation.compact_pair("a" * 500, "b" * 500, 80)
+        self.assertLessEqual(len(pair), 80)
+        self.assertIn(" : ", pair)
+
+    def test_short_context_skips_translation_and_markdown(self):
+        analysis = (
+            "## 🌐 Bản dịch\n\nXin chào\n\n"
+            "## 🔍 Phân tích\n\n"
+            "### Thành ngữ\n\n"
+            "**Thành ngữ:** Hello dùng để chào hỏi.\n"
+            "- Giải thích thêm.\n"
+        )
+        self.assertEqual(
+            presentation.short_context(analysis),
+            "Thành ngữ: Hello dùng để chào hỏi.",
+        )
+
+    def test_context_line(self):
+        self.assertEqual(
+            presentation.context_line(
+                "OpenCode AI", "Lời chào", "en", "vi",
+            ),
+            "OpenCode AI · Lời chào",
+        )
+        self.assertEqual(
+            presentation.context_line("Fast", "", "en", "vi"),
+            "Fast · EN→VI",
+        )
+
+
+class TestIsland(unittest.TestCase):
+
+    def test_build_payload_is_minimal(self):
+        payload = island.build_payload(
+            "Hello", "Xin chào", "en", "vi", "OpenCode AI",
+            context="Lời chào", timeout_ms=1, screen="eDP-1",
+        )
+        self.assertEqual(payload["title"], "Hello : Xin chào")
+        self.assertEqual(payload["subtitle"], "OpenCode AI · Lời chào")
+        self.assertEqual(payload["body"], "Xin chào")
+        self.assertEqual(payload["duration"], 2000)
+        self.assertEqual(payload["screen"], "eDP-1")
+        self.assertEqual(
+            [action["id"] for action in payload["actions"]],
+            ["copy", "analyze"],
+        )
+
+    def test_show_in_island_publishes_and_starts_watcher(self):
+        with mock.patch.object(island.dms, "available", return_value=True), \
+                mock.patch.object(island.dms, "island_available", return_value=True), \
+                mock.patch.object(island.dms, "island_publish", return_value=True) as publish, \
+                mock.patch.object(island, "_focused_output", return_value="eDP-1"), \
+                mock.patch.object(island, "_spawn_watcher", return_value=True) as watcher:
+            self.assertTrue(island.show_in_island(
+                "Hello", "Xin chào", "en", "vi", "OpenCode AI",
+                context="Lời chào", analysis="## 🔍 Phân tích\n\nLời chào.",
+            ))
+        source, activity_id, payload = publish.call_args.args
+        self.assertTrue(source.startswith("supertrans-"))
+        self.assertTrue(activity_id.startswith("result-"))
+        self.assertEqual(payload["screen"], "eDP-1")
+        watcher_payload = watcher.call_args.args[0]
+        self.assertEqual(watcher_payload["source"], source)
+        self.assertIn("Lời chào.", watcher_payload["analysis"])
+
+    def test_show_in_island_derives_context_from_analysis(self):
+        with mock.patch.object(island.dms, "available", return_value=True), \
+                mock.patch.object(island.dms, "island_available", return_value=True), \
+                mock.patch.object(island.dms, "island_publish", return_value=True) as publish, \
+                mock.patch.object(island, "_focused_output", return_value="eDP-1"), \
+                mock.patch.object(island, "_spawn_watcher", return_value=True):
+            self.assertTrue(island.show_in_island(
+                "Hello", "Xin chào", "en", "vi", "OpenCode AI",
+                analysis="## 🔍 Phân tích\n\nLời chào thân mật.",
+            ))
+        self.assertEqual(
+            publish.call_args.args[2]["subtitle"],
+            "OpenCode AI · Lời chào thân mật.",
+        )
+
+    def test_show_in_island_unavailable(self):
+        with mock.patch.object(island.dms, "available", return_value=False), \
+                mock.patch.object(island.dms, "island_publish") as publish:
+            self.assertFalse(island.show_in_island("Hello", "Xin chào"))
+        publish.assert_not_called()
+
+    def test_show_in_island_rolls_back_when_watcher_fails(self):
+        with mock.patch.object(island.dms, "available", return_value=True), \
+                mock.patch.object(island.dms, "island_available", return_value=True), \
+                mock.patch.object(island.dms, "island_publish", return_value=True), \
+                mock.patch.object(island.dms, "island_remove", return_value=True) as remove, \
+                mock.patch.object(island, "_focused_output", return_value="eDP-1"), \
+                mock.patch.object(island, "_spawn_watcher", return_value=False):
+            self.assertFalse(island.show_in_island("Hello", "Xin chào"))
+        remove.assert_called_once()
+
+    @mock.patch("super_trans.core.island_watch.set_clipboard_text",
+                return_value=True)
+    @mock.patch("super_trans.core.island_watch.dms.toast", return_value=True)
+    def test_copy_action(self, toast, clipboard):
+        result = island_watch.handle_action("copy", {
+            "original": "Hello",
+            "translated": "Xin chào",
+            "src_lang": "en",
+            "tgt_lang": "vi",
+        })
+        self.assertEqual(result, "keep")
+        clipboard.assert_called_once_with("Xin chào")
+        toast.assert_called_once()
+
+    @mock.patch("super_trans.core.island_watch.open_in_dms_notepad",
+                return_value=True)
+    @mock.patch("super_trans.core.island_watch.dms.toast", return_value=True)
+    @mock.patch("super_trans.core.island_watch.OpenCodeEngine")
+    def test_analyze_action_runs_engine_when_needed(
+        self, engine_cls, _toast, notepad
+    ):
+        engine_cls.return_value.analyze.return_value = (
+            "Xin chào", "## 🔍 Phân tích\n\nLời chào.", "en",
+        )
+        result = island_watch.handle_action("analyze", {
+            "original": "Hello",
+            "translated": "Xin chào",
+            "src_lang": "en",
+            "tgt_lang": "vi",
+            "analysis": "",
+            "ai_model": "opencode/test",
+            "ai_timeout": 30,
+        })
+        self.assertEqual(result, "close")
+        engine_cls.assert_called_once()
+        notepad.assert_called_once()
+        self.assertIn("Lời chào.", notepad.call_args.args[1])
+
+    @mock.patch("super_trans.core.island_watch.open_in_dms_notepad",
+                return_value=True)
+    @mock.patch("super_trans.core.island_watch.OpenCodeEngine")
+    def test_analyze_action_reuses_analysis(self, engine_cls, notepad):
+        result = island_watch.handle_action("analyze", {
+            "original": "Hello",
+            "translated": "Xin chào",
+            "src_lang": "en",
+            "tgt_lang": "vi",
+            "analysis": "## 🔍 Phân tích\n\nLời chào.",
+        })
+        self.assertEqual(result, "close")
+        engine_cls.assert_not_called()
+        notepad.assert_called_once()
+        self.assertIn("Lời chào.", notepad.call_args.args[1])
+
+
+class TestDMSIslandIPC(unittest.TestCase):
+
+    @staticmethod
+    def _completed(code=0, stdout="", stderr=""):
+        return subprocess.CompletedProcess(
+            args=[], returncode=code, stdout=stdout, stderr=stderr,
+        )
+
+    @mock.patch("super_trans.core.dms._run")
+    def test_availability(self, run):
+        run.return_value = self._completed(
+            stdout='{"islandPresent":true,"activitiesAvailable":true}',
+        )
+        self.assertTrue(dms.island_available())
+        run.return_value = self._completed(
+            stdout='{"islandPresent":true,"activitiesAvailable":false}',
+        )
+        self.assertFalse(dms.island_available())
+
+    @mock.patch("super_trans.core.dms._run")
+    def test_publish_uses_stdin(self, run):
+        run.return_value = self._completed(stdout="ISLAND_ACTIVITY_PUBLISHED")
+        self.assertTrue(dms.island_publish("src", "id", {"title": "Hello"}))
+        args, kwargs = run.call_args
+        self.assertEqual(
+            args[0],
+            ["ipc", "call", "islandActivity", "publish", "src", "id", "-"],
+        )
+        self.assertIn('"title": "Hello"', kwargs["input_text"])
+
+    @mock.patch("super_trans.core.dms._run")
+    def test_list_and_actions(self, run):
+        run.return_value = self._completed(
+            stdout='[{"source":"src","id":"id"}]',
+        )
+        self.assertEqual(dms.island_list(), [{"source": "src", "id": "id"}])
+        run.return_value = self._completed(
+            stdout='[{"source":"src","id":"id","action":"copy"}]',
+        )
+        self.assertEqual(
+            dms.island_poll_actions("src"),
+            [{"source": "src", "id": "id", "action": "copy"}],
+        )
+        run.return_value = self._completed(stdout="ISLAND_ACTIVITY_REMOVED")
+        self.assertTrue(dms.island_remove("src", "id"))
+
+
+class TestNotifier(unittest.TestCase):
+
+    @mock.patch("super_trans.core.notifier.dms.available", return_value=True)
+    @mock.patch("super_trans.core.notifier.dms.toast", return_value=True)
+    def test_dms_toast_is_minimal(self, toast, _available):
+        self.assertTrue(notifier.send_dms_toast(
+            "Hello", "Xin chào", "en", "vi", "OpenCode AI",
+            context="Lời chào",
+        ))
+        title, details = toast.call_args.args[:2]
+        self.assertEqual(title, "Hello : Xin chào")
+        self.assertEqual(details, "OpenCode AI · Lời chào")
+
+    @mock.patch("super_trans.core.notifier.show_in_island",
+                return_value=True)
+    @mock.patch("super_trans.core.notifier.show_in_launcher")
+    def test_island_does_not_repeat_translation_as_context(
+        self, launcher_mock, island_mock
+    ):
+        self.assertTrue(notifier.display_result(
+            "Hello", "Xin chào", "en", "vi", "Fast",
+            mode="island", analysis="Xin chào",
+        ))
+        launcher_mock.assert_not_called()
+        self.assertEqual(island_mock.call_args.kwargs["context"], "")
+
+    @mock.patch("super_trans.core.notifier.show_in_island",
+                return_value=True)
+    @mock.patch("super_trans.core.notifier.show_in_launcher")
+    def test_island_success_skips_launcher(self, launcher_mock, island_mock):
+        self.assertTrue(notifier.display_result(
+            "Hello", "Xin chào", "en", "vi", "Fast",
+            mode="island", analysis="## 🔍 Phân tích\n\nLời chào.",
+        ))
+        island_mock.assert_called_once()
+        launcher_mock.assert_not_called()
+        self.assertEqual(
+            island_mock.call_args.kwargs["context"],
+            "Lời chào.",
+        )
+
+    @mock.patch("super_trans.core.notifier.show_in_launcher",
+                return_value="copied")
+    @mock.patch("super_trans.core.notifier.show_in_island",
+                return_value=False)
+    def test_island_falls_back_to_launcher(self, _island, launcher_mock):
+        self.assertTrue(notifier.display_result(
+            "Hello", "Xin chào", "en", "vi", "Fast",
+            mode="island", analysis="## 🔍 Phân tích\n\nLời chào.",
+        ))
+        launcher_mock.assert_called_once()
+        self.assertEqual(
+            launcher_mock.call_args.kwargs["analysis"],
+            "## 🔍 Phân tích\n\nLời chào.",
+        )
 
 
 class TestCLI(unittest.TestCase):
@@ -403,6 +697,7 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(output.strip(), "Hello")
         self.assertTrue(ai.call_args.args[4])  # wants_notepad=True
+        self.assertTrue(ai.call_args.args[5])  # want_analysis=True
         notepad.assert_called_once()
         display.assert_not_called()
 
@@ -413,9 +708,23 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(output.strip(), "Hello")
         self.assertFalse(ai.call_args.args[4])  # wants_notepad=False
+        self.assertTrue(ai.call_args.args[5])   # want_analysis=True
         notepad.assert_not_called()
         display.assert_called_once()
         self.assertEqual(display.call_args.kwargs["mode"], "launcher")
+        self.assertEqual(display.call_args.kwargs["analysis"], "## Analysis")
+
+    def test_island_ai_requests_context_without_notepad(self):
+        code, output, ai, notepad, display = self._run_cli(
+            ["--engine", "ai", "--output", "island", "xin chào"]
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(output.strip(), "Hello")
+        self.assertFalse(ai.call_args.args[4])  # wants_notepad=False
+        self.assertTrue(ai.call_args.args[5])   # want_analysis=True
+        notepad.assert_not_called()
+        display.assert_called_once()
+        self.assertEqual(display.call_args.kwargs["mode"], "island")
 
 
 class TestConfig(unittest.TestCase):
@@ -429,13 +738,15 @@ class TestConfig(unittest.TestCase):
             "auto_copy_to_clipboard": "no",
             "ocr_psm": "99",
             "history_limit": "1",
+            "island_timeout_ms": "1",
             "ocr_preprocess": "yes",
             "cache_enabled": "no",
         })
         self.assertEqual(config["default_engine"], "fast")
-        self.assertEqual(config["output_mode"], "launcher")
+        self.assertEqual(config["output_mode"], "island")
         self.assertEqual(config["ai_timeout_sec"], 600)
         self.assertEqual(config["notification_timeout_ms"], 1000)
+        self.assertEqual(config["island_timeout_ms"], 2000)
         self.assertTrue(config["auto_copy_to_clipboard"])
         self.assertEqual(config["ocr_psm"], 13)
         self.assertEqual(config["history_limit"], 10)

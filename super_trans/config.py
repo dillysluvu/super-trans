@@ -9,18 +9,22 @@ from typing import Any, Dict
 CONFIG_DIR = os.path.expanduser("~/.config/super-trans")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
-VALID_OUTPUT_MODES = {"launcher", "replace", "osd", "dms_toast", "notification", "none"}
+VALID_OUTPUT_MODES = {
+    "island", "launcher", "replace", "osd", "dms_toast",
+    "notification", "none",
+}
 VALID_ENGINES = {"fast", "ai"}
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "default_engine": "fast",                 # "fast" (Google GTX) hoặc "ai" (OpenCode)
-    "output_mode": "launcher",                # launcher | replace | osd | dms_toast | notification | none
+    "output_mode": "island",                  # island | launcher | replace | osd | dms_toast | notification | none
     "ai_model": "opencode/deepseek-v4.1-flash-free",
     "ai_timeout_sec": 120,                    # Thời gian chờ tối đa cho OpenCode AI
     "primary_target_lang": "vi",              # Dịch sang Tiếng Việt nếu nguồn là ngoại ngữ
     "secondary_target_lang": "en",            # Dịch sang Tiếng Anh nếu nguồn là Tiếng Việt
     "auto_copy_to_clipboard": True,           # Tự động copy bản dịch vào Clipboard DMS
     "notification_timeout_ms": 6000,          # Thời gian timeout (ms)
+    "island_timeout_ms": 10000,               # Thời gian hiển thị kết quả trên Dynamic Island
     "show_popup_on_ai": True,                 # Mở bài phân tích AI trong DMS Notepad
     "ocr_lang": "eng+fra+chi_sim+vie",        # Ngôn ngữ mặc định cho Tesseract OCR
     "ocr_preprocess": True,                   # Tăng cường ảnh trước khi OCR (Pillow/ImageMagick)
@@ -31,6 +35,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
 _INT_RANGES = {
     "notification_timeout_ms": (1000, 60000),
+    "island_timeout_ms": (2000, 60000),
     "ai_timeout_sec": (10, 600),
     "ocr_psm": (0, 13),
     "history_limit": (10, 10000),

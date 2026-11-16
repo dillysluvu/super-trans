@@ -131,12 +131,12 @@ if [ "$INSTALL_NIRI" -eq 1 ]; then
     cat > "$NIRI_TRANS_KDL" << 'EOF'
 // SuperTrans - Siêu tiện ích dịch thuật toàn hệ thống
 // Hợp tác phát triển bởi Antigravity AI và OpenCode AI
-// Tích hợp 100% vào các tiện ích có sẵn của hệ thống (DMS Launcher, DMS Notepad, wtype)
+// Tích hợp 100% vào các tiện ích có sẵn của hệ thống (DMS Dynamic Island, DMS Notepad, wtype)
 
 binds {
-    // 🌐 Bôi đen text và nhấn Mod+Alt+T để xem bản dịch trong DMS Launcher (Spotlight)
-    Mod+Alt+T allow-inhibiting=false hotkey-overlay-title="SuperTrans: Xem bản dịch trong DMS Launcher" {
-        spawn "super-trans" "--selection" "--output" "launcher";
+    // 🌐 Bôi đen text và nhấn Mod+Alt+T để xem bản dịch tối giản trên Dynamic Island
+    Mod+Alt+T allow-inhibiting=false hotkey-overlay-title="SuperTrans: Dịch trên Dynamic Island" {
+        spawn "super-trans" "--selection" "--output" "island";
     }
 
     // ✍️ Bôi đen text và nhấn Mod+Alt+R để THAY THẾ TRỰC TIẾP tại chỗ (In-place replace)
@@ -154,14 +154,14 @@ binds {
         spawn "super-trans" "--selection" "--engine" "ai";
     }
 
-    // 📸 Nhấn Mod+Alt+O để kéo chuột chụp vùng ảnh màn hình OCR và mở trong DMS Launcher
+    // 📸 Nhấn Mod+Alt+O để kéo chuột chụp vùng ảnh màn hình OCR và xem trên Dynamic Island
     Mod+Alt+O allow-inhibiting=false hotkey-overlay-title="SuperTrans: Chụp vùng màn hình OCR" {
-        spawn "super-trans" "--ocr" "--output" "launcher";
+        spawn "super-trans" "--ocr" "--output" "island";
     }
 
-    // ⌨️ Nhấn Mod+Alt+I để mở thanh nhập liệu dịch nhanh bằng DMS Launcher
-    Mod+Alt+I allow-inhibiting=false hotkey-overlay-title="SuperTrans: Ô nhập liệu dịch DMS Launcher" {
-        spawn "super-trans" "--input";
+    // ⌨️ Nhấn Mod+Alt+I để mở thanh nhập liệu dịch nhanh và xem trên Dynamic Island
+    Mod+Alt+I allow-inhibiting=false hotkey-overlay-title="SuperTrans: Ô nhập liệu dịch nhanh" {
+        spawn "super-trans" "--input" "--output" "island";
     }
 }
 EOF
@@ -199,12 +199,12 @@ fi
 if command -v dms >/dev/null 2>&1; then
     timeout 3 dms notify -a "SuperTrans" -i "accessories-dictionary" \
         "🌐 SuperTrans đã sẵn sàng!" \
-        "Phím tắt: Mod+Alt+T (Dịch), Mod+Alt+R (Thay thế), Mod+Alt+Z (Hoàn tác), Mod+Alt+O (OCR)" \
+        "Phím tắt: Mod+Alt+T (Dynamic Island), Mod+Alt+R (Thay thế), Mod+Alt+Z (Hoàn tác), Mod+Alt+O (OCR)" \
         >/dev/null 2>&1 || true
 elif command -v notify-send >/dev/null 2>&1; then
     notify-send -a "SuperTrans" -i "accessories-dictionary" \
         "🌐 SuperTrans đã sẵn sàng!" \
-        "Phím tắt: Mod+Alt+T (Dịch), Mod+Alt+R (Thay thế), Mod+Alt+Z (Hoàn tác), Mod+Alt+O (OCR)" \
+        "Phím tắt: Mod+Alt+T (Dynamic Island), Mod+Alt+R (Thay thế), Mod+Alt+Z (Hoàn tác), Mod+Alt+O (OCR)" \
         2>/dev/null || true
 fi
 
@@ -213,12 +213,12 @@ echo "🎉 Hoàn tất cài đặt! Bạn có thể sử dụng ngay:"
 echo "  - Trong Terminal: trans \"Hello world\" hoặc echo \"text\" | trans"
 if [ "$INSTALL_NIRI" -eq 1 ]; then
     echo "  - Toàn hệ thống (Phím tắt Niri):"
-    echo "      * Mod+Alt+T : Bôi đen chữ và dịch nhanh trong DMS Launcher (~150ms)"
+    echo "      * Mod+Alt+T : Dịch tối giản trên Dynamic Island (gốc : nghĩa)"
     echo "      * Mod+Alt+R : Dịch và thay thế trực tiếp tại chỗ (không cửa sổ)"
     echo "      * Mod+Alt+Z : Hoàn tác lần thay thế gần nhất (Ctrl+Z)"
     echo "      * Mod+Alt+A : Phân tích chuyên sâu bằng OpenCode AI trong DMS Notepad"
-    echo "      * Mod+Alt+O : Chụp vùng màn hình và dịch OCR"
-    echo "      * Mod+Alt+I : Mở ô nhập văn bản cần dịch"
+    echo "      * Mod+Alt+O : Chụp vùng màn hình và dịch OCR trên Dynamic Island"
+    echo "      * Mod+Alt+I : Mở ô nhập văn bản và xem kết quả trên Dynamic Island"
     echo "  - Lịch sử/cache: trans --history | trans --search \"...\" | trans --stats"
     echo "  - Chẩn đoán     : trans --doctor"
 fi

@@ -2,7 +2,7 @@
 
 > **Hợp tác phát triển giữa Antigravity AI và OpenCode AI**, tối ưu hóa riêng cho **Fedora Linux, Niri Wayland Compositor và DMS Shell**.
 
-SuperTrans sống trong hệ thống thay vì mở thêm một cửa sổ rời rạc: bôi đen chữ, nhấn phím tắt, nhận bản dịch ngay trong DMS Launcher/Notepad hoặc dán đè trực tiếp tại con trỏ. Bản dịch được cache cục bộ, có lịch sử, có thể hoàn tác, và OCR được tăng cường trước khi nhận diện.
+SuperTrans sống trong hệ thống thay vì mở thêm một cửa sổ rời rạc: bôi đen chữ, nhấn phím tắt, nhận bản dịch ngay trên **Dynamic Island của DMS**, trong Notepad hoặc dán đè trực tiếp tại con trỏ. Giao diện kết quả được tối giản thành hai dòng `gốc : nghĩa` và `engine · ngữ cảnh`. Bản dịch được cache cục bộ, có lịch sử, có thể hoàn tác, và OCR được tăng cường trước khi nhận diện.
 
 ---
 
@@ -10,11 +10,15 @@ SuperTrans sống trong hệ thống thay vì mở thêm một cửa sổ rời 
 
 ### 1. Dịch thuật tích hợp DMS
 
-- **DMS Launcher / Spotlight (`dms dmenu`)**: kết quả hiện trong cửa sổ tìm kiếm quen thuộc (`Mod+D`), dùng chung font, hiệu ứng mờ và màu theme.
+- **DMS Dynamic Island**: kết quả hiện ngay trên island với bố cục tối giản:
+  - dòng 1: `gốc : nghĩa` (rút gọn cân bằng hai phía);
+  - dòng 2: `engine · ngữ cảnh` (ví dụ `OpenCode AI · lời chào thân mật`);
+  - bấm vào island để mở rộng xem bản dịch đầy đủ, nút **Sao chép** và **Phân tích**.
+- **DMS Launcher / Spotlight (`dms dmenu`)**: phương án dự phòng và vẫn dùng được khi island tắt; kết quả chỉ còn một dòng `gốc : nghĩa` cùng ba hành động ngắn gọn.
 - **DMS Notepad**: phân tích chuyên sâu của OpenCode AI được lưu thành Markdown và mở trong Notepad.
 - **DMS Clipboard**: bản dịch tự động nằm trong lịch sử clipboard.
-- **DMS Toast / Notification**: hiển thị không xâm lấn khi cần.
-- Cơ chế dự phòng: `dms dmenu` → `fuzzel`, `dms clipboard` → `wl-copy` + `wtype`, `dms notify` → `notify-send`, DMS Notepad → `xdg-open`.
+- **DMS Toast / Notification**: cũng dùng bố cục `gốc : nghĩa` + `engine · ngữ cảnh`, không lặp lại nhãn ngôn ngữ.
+- Cơ chế dự phòng: `island` → `dms dmenu` → `fuzzel`, `dms clipboard` → `wl-copy` + `wtype`, `dms notify` → `notify-send`, DMS Notepad → `xdg-open`.
 
 ### 2. Thay thế tại chỗ an toàn + Hoàn tác
 
@@ -56,7 +60,7 @@ SuperTrans sống trong hệ thống thay vì mở thêm một cửa sổ rời 
 | `wl-clipboard` (`wl-paste`, `wl-copy`) | Đọc/ghi clipboard, PRIMARY | Khuyến nghị |
 | `wtype` | Dự phòng dán tại chỗ và gửi `Ctrl+Z` | Khuyến nghị |
 | `slurp`, `grim`, `tesseract` | OCR vùng màn hình | Cần cho `--ocr` |
-| `dms` | Launcher, Notepad, Clipboard, Toast | Tùy chọn, có fallback |
+| `dms` | Dynamic Island, Launcher, Notepad, Clipboard, Toast | Tùy chọn, có fallback |
 | `fuzzel` | Fallback Launcher | Tùy chọn |
 | `opencode` | Engine AI | Cần cho `-e ai` |
 | Pillow hoặc ImageMagick | Tăng cường ảnh OCR | Tùy chọn, khuyến nghị |
@@ -114,12 +118,12 @@ Gỡ cài đặt:
 
 | Phím tắt | Chức năng | Cơ chế hoạt động |
 |---|---|---|
-| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>T</kbd> | **Xem bản dịch trong DMS Launcher** | Bôi đen text → menu kết quả (Copy, Dán đè, Phân tích AI). |
+| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>T</kbd> | **Dịch trên Dynamic Island** | Bôi đen text → island hiện `gốc : nghĩa` + `engine · ngữ cảnh`; bấm island để xem đầy đủ. |
 | <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>R</kbd> | **Thay thế trực tiếp tại chỗ** | Bôi đen text → dịch và dán đè, không hiện thông báo. |
 | <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>Z</kbd> | **Hoàn tác thay thế gần nhất** | Gửi `Ctrl+Z` tới cửa sổ đã thay thế. |
 | <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>A</kbd> | **Phân tích chuyên sâu** | OpenCode AI phân tích thành ngữ, ngữ pháp, sắc thái trong DMS Notepad. |
-| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>O</kbd> | **OCR vùng màn hình** | Kéo chuột quét ảnh/video → mở kết quả trong DMS Launcher. |
-| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>I</kbd> | **Hộp thoại nhập liệu nhanh** | Mở thanh nhập liệu DMS Launcher. |
+| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>O</kbd> | **OCR vùng màn hình** | Kéo chuột quét ảnh/video → kết quả trên Dynamic Island. |
+| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>I</kbd> | **Hộp thoại nhập liệu nhanh** | Mở thanh nhập liệu → kết quả trên Dynamic Island. |
 
 *(Phím `Mod` là `Super` / `Windows` trên bàn phím.)*
 
@@ -147,11 +151,18 @@ trans --replace --clipboard
 trans --undo
 trans --undo --force
 
-# Mở kết quả trong DMS Launcher
+# Mở kết quả tối giản trên Dynamic Island (mặc định mới)
+trans --selection --output island
+trans --output island "Hello"
+
+# Mở kết quả trong DMS Launcher (dự phòng / cần menu hành động)
 trans --selection --output launcher
 
 # Phân tích chuyên sâu bằng OpenCode AI (mở DMS Notepad)
 trans -e ai "塞翁失马"
+
+# AI trả kết quả tối giản trên island, kèm một dòng ngữ cảnh
+trans -e ai --output island "Break a leg"
 
 # Chỉ lấy bản dịch sạch, không mở Notepad
 trans -e ai --no-popup "塞翁失马"
@@ -194,7 +205,7 @@ trans --doctor
 | `--ocr-preprocess` / `--no-ocr-preprocess` | Bật/tắt tăng cường ảnh cho lần chạy. |
 | `-i`, `--input` | Mở ô nhập liệu nhanh qua DMS Launcher. |
 | `-e`, `--engine` | `fast` (Google GTX) hoặc `ai` (OpenCode). |
-| `-m`, `--output` | `launcher`, `replace`, `osd`, `dms_toast`, `notification`, `none`. |
+| `-m`, `--output` | `island`, `launcher`, `replace`, `osd`, `dms_toast`, `notification`, `none`. |
 | `--from`, `--to` | Chỉ định ngôn ngữ nguồn/đích. |
 | `--no-copy` | Không tự động sao chép kết quả vào clipboard. |
 | `--no-popup` | Không mở DMS Notepad khi dùng engine AI. |
@@ -218,13 +229,14 @@ File cấu hình: `~/.config/super-trans/config.json`
 ```json
 {
   "default_engine": "fast",
-  "output_mode": "launcher",
+  "output_mode": "island",
   "ai_model": "opencode/deepseek-v4.1-flash-free",
   "ai_timeout_sec": 120,
   "primary_target_lang": "vi",
   "secondary_target_lang": "en",
   "auto_copy_to_clipboard": true,
   "notification_timeout_ms": 6000,
+  "island_timeout_ms": 10000,
   "show_popup_on_ai": true,
   "ocr_lang": "eng+fra+chi_sim+vie",
   "ocr_preprocess": true,
@@ -243,6 +255,8 @@ File cấu hình: `~/.config/super-trans/config.json`
 | `primary_target_lang` | Đích cho văn bản ngoại ngữ (mặc định `vi`). |
 | `secondary_target_lang` | Đích cho văn bản tiếng Việt (mặc định `en`). |
 | `auto_copy_to_clipboard` | Tự động đưa bản dịch vào clipboard/DMS Clipboard. |
+| `notification_timeout_ms` | Thời gian hiển thị toast/notification (1–60 giây). |
+| `island_timeout_ms` | Thời gian hiển thị kết quả trên Dynamic Island (2–60 giây). |
 | `show_popup_on_ai` | Mở DMS Notepad khi dùng engine AI. |
 | `ocr_lang` | Danh sách ngôn ngữ Tesseract mặc định. |
 | `ocr_preprocess` | Bật tăng cường ảnh trước OCR. |
@@ -252,12 +266,15 @@ File cấu hình: `~/.config/super-trans/config.json`
 
 Giá trị `output_mode`:
 
-- `launcher`: DMS Spotlight Launcher (mặc định), fallback `fuzzel`.
+- `island`: Dynamic Island của DMS (mặc định), bố cục `gốc : nghĩa` + `engine · ngữ cảnh`; fallback Launcher nếu island không khả dụng.
+- `launcher`: DMS Spotlight Launcher, fallback `fuzzel`.
 - `replace`: Thay thế tại chỗ bằng DMS Clipboard/wtype.
 - `osd`: Thẻ Wayland OSD nổi (GTK4 + Layer Shell).
-- `dms_toast`: Toast trên Dynamic Island của DMS.
+- `dms_toast`: Toast trên Dynamic Island của DMS (một dòng kết quả + ngữ cảnh).
 - `notification`: Notification desktop.
 - `none`: Chỉ in ra stdout.
+
+Khi island mở rộng, phần thân hiển thị bản dịch đầy đủ; hai nút **Sao chép** và **Phân tích** được xử lý bởi tiến trình nền nhỏ và tự thoát khi island đóng. Nếu DMS tắt activity hoặc không chạy, SuperTrans tự quay về Launcher để không mất thao tác.
 
 ---
 
@@ -279,8 +296,8 @@ Giá trị `output_mode`:
 
 - `trans -e ai "..."` gọi OpenCode với prompt yêu cầu **bản dịch sạch** và **phân tích Markdown**.
 - Bài phân tích được lưu tại `~/.cache/super-trans/super-trans-analysis-*.md` và mở trong DMS Notepad.
-- Mặc định, khi Notepad đã mở, SuperTrans **không mở thêm Launcher** để tránh trùng lặp.
-- Nếu chỉ định rõ `--output` (ví dụ `--output launcher`), SuperTrans dùng bản dịch sạch và bỏ qua Notepad.
+- Mặc định, khi Notepad đã mở, SuperTrans **không mở thêm island/Launcher** để tránh trùng lặp.
+- Nếu chỉ định rõ `--output` (ví dụ `--output island` hoặc `--output launcher`), SuperTrans dùng bản dịch sạch, bỏ qua Notepad; với island, dòng đầu phần phân tích được dùng làm ngữ cảnh.
 - Nếu OpenCode lỗi hoặc quá thời gian, SuperTrans tự chuyển sang FastEngine và báo lỗi ra stderr.
 - Bản dịch AI sạch cũng được cache; lần sau `-e ai --no-popup` có thể trả ngay từ cache.
 
@@ -328,11 +345,18 @@ SUPERTRANS_LIVE_TESTS=1 python3 -m unittest discover -s tests -v
 cargo test --manifest-path native/Cargo.toml
 ```
 
-Bộ kiểm thử bao quát: nhận diện Việt/Pháp/Trung, chia nhỏ văn bản dài (Python + Rust), parse phản hồi dịch, retry mạng, lọc ngôn ngữ OCR, trạng thái DMS dmenu, cache/lịch sử SQLite, undo, an toàn PRIMARY/clipboard, tăng cường ảnh, và logic tránh mở trùng Notepad + Launcher.
+Bộ kiểm thử bao quát: nhận diện Việt/Pháp/Trung, chia nhỏ văn bản dài (Python + Rust), parse phản hồi dịch, retry mạng, lọc ngôn ngữ OCR, trạng thái DMS dmenu, payload Dynamic Island, xử lý nút Sao chép/Phân tích, cache/lịch sử SQLite, undo, an toàn PRIMARY/clipboard, tăng cường ảnh, và logic tránh mở trùng Notepad + island/Launcher.
 
 ---
 
 ## 🛠️ Khắc phục sự cố
+
+**Không thấy kết quả trên Dynamic Island**
+- Kiểm tra `dms ipc call islandActivity availability` trả về `"islandPresent": true` và `"activitiesAvailable": true`.
+- Bật activity/island trong cài đặt DMS nếu đang tắt.
+- SuperTrans sẽ tự fallback sang DMS Launcher rồi `fuzzel` nếu island không phản hồi.
+- Chạy `trans --doctor` để xem mục **Dynamic Island**.
+- Nếu chỉ muốn kiểm tra nhanh: `trans --output island "Hello"`.
 
 **Không thấy kết quả trong DMS Launcher**
 - Kiểm tra `dms ipc call toast status` trả về trạng thái hợp lệ.
@@ -393,11 +417,14 @@ super_trans/
 │   ├── detector.py         # Nhận diện Việt/Pháp/Trung, chọn ngôn ngữ đích
 │   ├── dms.py              # Lớp tích hợp DMS dùng chung
 │   ├── image_prep.py       # Tăng cường ảnh OCR (Pillow/ImageMagick)
+│   ├── island.py           # Publish kết quả tối giản lên DMS Dynamic Island
+│   ├── island_watch.py     # Tiến trình nền xử lý nút Sao chép/Phân tích
 │   ├── launcher.py         # DMS Launcher, Notepad, thay thế, undo
 │   ├── native.py           # Cầu nối helper Rust + fallback Python
-│   ├── notifier.py         # OSD, DMS toast, notification
+│   ├── notifier.py         # Island, OSD, DMS toast, notification
 │   ├── ocr.py              # Slurp + Grim + Tesseract, file/clipboard
 │   ├── osd.py              # Thẻ OSD GTK4 Layer Shell
+│   ├── presentation.py     # Định dạng `gốc : nghĩa`, `engine · ngữ cảnh`
 │   └── store.py            # SQLite cache, lịch sử, nhật ký thay thế
 ├── engines/
 │   ├── fast_engine.py      # Google GTX, chia nhỏ văn bản dài
