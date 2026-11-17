@@ -20,6 +20,7 @@ from super_trans.core.clipboard import (
     set_clipboard_text,
 )
 from super_trans.core.detector import resolve_languages
+from super_trans.core.island import show_pending
 from super_trans.core.launcher import (
     open_in_dms_notepad,
     prompt_input_via_launcher,
@@ -406,6 +407,9 @@ def _cmd_doctor(config) -> int:
     rust = native.status()
     _check("super-trans-native", bool(rust["available"]),
            str(rust["version"] or rust["path"] or "chưa build (fallback Python)"))
+    if rust["available"]:
+        _check("Rust IPC island", bool(rust.get("island_ipc")),
+               "Quickshell socket trực tiếp" if rust.get("island_ipc") else "dùng DMS CLI")
     print(f"     Dùng cho văn bản >= {rust['threshold']} ký tự")
 
     print("\n🪟 Giao diện")
@@ -494,6 +498,7 @@ def main() -> int:
     detected_src = src_lang
     active_engine_name = "Fast"
     cache_hit = False
+    pending = None
 
     if cache_allowed:
         cached = store.lookup(input_text, src_lang, tgt_lang, engine_key)
@@ -510,6 +515,15 @@ def main() -> int:
             if args.verbose:
                 print("⚡ Cache hit — không gọi mạng.", file=sys.stderr)
 
+    # Phản hồi tức thì: mở island với "Đang dịch…" trước khi gọi mạng/AI.
+    # Cache hit không cần vì kết quả đã có ngay.
+    if not cache_hit and out_mode == "island" and not wants_notepad:
+        pending = show_pending(
+            input_text, src_lang, tgt_lang,
+            "OpenCode AI" if engine_choice == "ai" else "Fast",
+            timeout_ms=config.get("island_timeout_ms", 10000),
+        )
+
     save_engine = engine_key
     if not cache_hit:
         if engine_choice == "ai":
@@ -519,6 +533,8 @@ def main() -> int:
                     want_analysis,
                 )
             except Exception as exc:  # FastEngine fallback cũng thất bại
+                if pending is not None:
+                    pending.cancel()
                 print(f"❌ Lỗi dịch: {exc}", file=sys.stderr)
                 return 1
             if active_engine_name.startswith("Fast"):
@@ -530,10 +546,14 @@ def main() -> int:
                 )
                 active_engine_name = "Fast"
             except Exception as exc:
+                if pending is not None:
+                    pending.cancel()
                 print(f"❌ Lỗi dịch: {exc}", file=sys.stderr)
                 return 1
 
         if not translated:
+            if pending is not None:
+                pending.cancel()
             print("❌ Bộ máy dịch không trả về nội dung.", file=sys.stderr)
             return 1
 
@@ -556,6 +576,9 @@ def main() -> int:
         # Không mở thêm island/launcher khi DMS Notepad đã hiển thị đầy đủ.
         if notepad_opened and args.output_mode is None:
             out_mode = "none"
+        if out_mode == "none" and pending is not None:
+            pending.cancel()
+            pending = None
 
     # 7. Sao chép kết quả vào clipboard nếu được bật
     if not args.no_copy and config.get("auto_copy_to_clipboard", True):
@@ -577,7 +600,10 @@ def main() -> int:
             ai_timeout=config.get("ai_timeout_sec", 120),
             analysis=analysis,
             island_timeout_ms=config.get("island_timeout_ms", 10000),
+            pending=pending,
         )
+        if pending is not None and pending.active:
+            pending.cancel()
 
     # 9. In ra stdout cho terminal / script
     try:

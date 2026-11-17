@@ -9,6 +9,8 @@
 use std::io::{self, Read, Write};
 use std::process;
 
+mod island;
+
 const DEFAULT_LIMIT: usize = 1800;
 
 fn split_text(text: &str, limit: usize) -> Vec<String> {
@@ -104,8 +106,11 @@ fn split_text(text: &str, limit: usize) -> Vec<String> {
 
 fn usage(program: &str) {
     eprintln!("Cách dùng: {program} chunk [--limit N]");
+    eprintln!("           {program} island <lệnh> [tham số]");
+    eprintln!("           {program} capabilities");
     eprintln!("           {program} --version");
     eprintln!("Đọc văn bản UTF-8 từ stdin, ghi các đoạn phân tách bằng NUL.");
+    island::usage(program);
 }
 
 fn main() {
@@ -124,6 +129,13 @@ fn main() {
         "--version" | "version" => {
             println!("super-trans-native {}", env!("CARGO_PKG_VERSION"));
             return;
+        }
+        "capabilities" => {
+            island::capabilities();
+            return;
+        }
+        "island" => {
+            process::exit(island::run(&args[2..]));
         }
         "chunk" => {}
         "--help" | "-h" | "help" => {

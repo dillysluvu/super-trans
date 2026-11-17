@@ -68,7 +68,7 @@ case ":$PATH:" in
        echo '       export PATH="$HOME/.local/bin:$PATH"' ;;
 esac
 
-# 2. Build helper Rust tùy chọn (tăng tốc chia văn bản dài)
+# 2. Build helper Rust tùy chọn (chia văn bản dài + IPC Dynamic Island)
 NATIVE_DIR="$HOME/.local/lib/super-trans"
 if command -v cargo >/dev/null 2>&1; then
     echo "  🦀 Đang build helper Rust..."
@@ -77,17 +77,11 @@ if command -v cargo >/dev/null 2>&1; then
         install -m 755 "$SCRIPT_DIR/native/target/release/super-trans-native" \
             "$NATIVE_DIR/super-trans-native"
         echo "  ✅ Đã cài helper Rust: $NATIVE_DIR/super-trans-native"
-    elif command -v rustc >/dev/null 2>&1 \
-        && rustc -O -o "$NATIVE_DIR/super-trans-native" \
-            "$SCRIPT_DIR/native/src/main.rs" >/dev/null 2>&1; then
-        chmod 755 "$NATIVE_DIR/super-trans-native"
-        echo "  ✅ Đã cài helper Rust bằng rustc: $NATIVE_DIR/super-trans-native"
     else
-        rmdir "$NATIVE_DIR" 2>/dev/null || true
-        echo "  ⚠️  Build Rust thất bại — SuperTrans vẫn dùng Python để chia văn bản."
+        echo "  ⚠️  Build Rust thất bại — SuperTrans vẫn dùng Python/DMS CLI."
     fi
 else
-    echo "  ℹ️  Không có cargo — bỏ qua helper Rust (mọi tính năng vẫn hoạt động)."
+    echo "  ℹ️  Không có cargo — bỏ qua helper Rust (dùng Python/DMS CLI, mọi tính năng vẫn chạy)."
 fi
 
 # 3. Cài đặt gói OCR đa ngôn ngữ (Anh, Pháp, Trung, Việt)
@@ -213,7 +207,7 @@ echo "🎉 Hoàn tất cài đặt! Bạn có thể sử dụng ngay:"
 echo "  - Trong Terminal: trans \"Hello world\" hoặc echo \"text\" | trans"
 if [ "$INSTALL_NIRI" -eq 1 ]; then
     echo "  - Toàn hệ thống (Phím tắt Niri):"
-    echo "      * Mod+Alt+T : Dịch tối giản trên Dynamic Island (gốc : nghĩa)"
+    echo "      * Mod+Alt+T : Dịch trên Dynamic Island (tự mở rộng, gốc : nghĩa)"
     echo "      * Mod+Alt+R : Dịch và thay thế trực tiếp tại chỗ (không cửa sổ)"
     echo "      * Mod+Alt+Z : Hoàn tác lần thay thế gần nhất (Ctrl+Z)"
     echo "      * Mod+Alt+A : Phân tích chuyên sâu bằng OpenCode AI trong DMS Notepad"

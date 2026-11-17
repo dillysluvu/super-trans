@@ -1,10 +1,13 @@
 [package]
 name = "super-trans-native"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Bộ chia văn bản dài siêu nhanh cho SuperTrans"
+description = "Helper Rust cho SuperTrans: chia văn bản dài và IPC Dynamic Island"
 license = "MIT"
 publish = false
+
+[dependencies]
+serde_json = "1"
 
 [[bin]]
 name = "super-trans-native"

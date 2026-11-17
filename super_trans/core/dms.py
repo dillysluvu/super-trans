@@ -147,6 +147,22 @@ def island_publish(source: str, activity_id: str, payload: Dict[str, Any],
     )
 
 
+def island_open(source: str, activity_id: str,
+                timeout: float = 2.0) -> bool:
+    """Mở rộng activity trên Dynamic Island để thấy đầy đủ nội dung."""
+    if not source or not activity_id:
+        return False
+    result = _run(
+        ["ipc", "call", "islandActivity", "open", source, activity_id],
+        timeout=timeout,
+    )
+    return bool(
+        result
+        and result.returncode == 0
+        and "ISLAND_ACTIVITY_OPENED" in (result.stdout or "")
+    )
+
+
 def island_remove(source: str, activity_id: str,
                   timeout: float = 2.0) -> bool:
     """Xóa activity khỏi Dynamic Island."""

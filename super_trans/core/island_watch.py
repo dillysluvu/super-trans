@@ -6,11 +6,12 @@ stdin để văn bản không xuất hiện trong danh sách tiến trình.
 """
 
 import json
+import select
 import sys
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-from super_trans.core import dms, presentation
+from super_trans.core import dms, native, presentation
 from super_trans.core.clipboard import set_clipboard_text
 from super_trans.core.launcher import open_in_dms_notepad
 from super_trans.engines.opencode_engine import OpenCodeEngine
@@ -18,6 +19,7 @@ from super_trans.engines.opencode_engine import OpenCodeEngine
 MAX_LIFETIME_SEC = 600.0
 POLL_INTERVAL_SEC = 0.35
 LIST_CHECK_INTERVAL_SEC = 1.5
+NATIVE_READY_TIMEOUT_SEC = 2.0
 
 
 def handle_action(action: str, payload: Dict[str, Any]) -> str:
@@ -80,26 +82,106 @@ def handle_action(action: str, payload: Dict[str, Any]) -> str:
     return "keep"
 
 
-def main() -> int:
+def _remove_activity(source: str, activity_id: str) -> None:
+    if not native.island_remove(source, activity_id):
+        dms.island_remove(source, activity_id)
+
+
+def _parse_event(line: str) -> Optional[Dict[str, Any]]:
+    """Đọc một dòng JSON từ watcher Rust."""
     try:
-        payload = json.loads(sys.stdin.read() or "{}")
+        event = json.loads(line or "")
     except (TypeError, ValueError):
-        return 1
-    if not isinstance(payload, dict):
-        return 1
+        return None
+    if not isinstance(event, dict):
+        return None
+    if event.get("type") == "action" or event.get("action"):
+        return event
+    return None
 
-    source = str(payload.get("source") or "")
-    activity_id = str(payload.get("id") or "")
-    if not source or not activity_id:
-        return 1
+
+def _handle_event(event: Dict[str, Any], payload: Dict[str, Any]) -> str:
+    action = str(event.get("action") or "")
+    if not action:
+        return "keep"
+    return handle_action(action, payload)
+
+
+def _terminate(proc) -> None:
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=1)
+        except Exception:  # noqa: BLE001 - tiến trình con có thể đã thoát
+            proc.kill()
+
+
+def _run_native_watcher(source: str, activity_id: str, duration: float,
+                        payload: Dict[str, Any]) -> Optional[int]:
+    """
+    Chạy watcher Rust. Trả None nếu helper không sẵn sàng để fallback Python.
+
+    Watcher Rust poll IPC trực tiếp mỗi ~80ms nên nút bấm phản hồi nhanh hơn
+    hẳn vòng poll Python (mỗi vòng phải spawn một tiến trình ``dms``).
+    """
+    proc = native.island_watch(
+        source, activity_id, int(duration * 1000),
+    )
+    if proc is None or proc.stdout is None:
+        return None
 
     try:
-        duration = max(
-            1.0, float(payload.get("duration_ms") or 10000) / 1000.0,
-        )
-    except (TypeError, ValueError):
-        duration = 10.0
+        # Chờ watcher xác nhận đã thấy activity. Nếu không, quay về Python.
+        deadline = time.monotonic() + NATIVE_READY_TIMEOUT_SEC
+        ready = False
+        while not ready:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                readable, _, _ = select.select([proc.stdout], [], [], remaining)
+            except (OSError, ValueError):
+                break
+            if not readable:
+                break
+            line = proc.stdout.readline()
+            if not line:
+                break
+            try:
+                event = json.loads(line)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(event, dict) and event.get("type") == "ready":
+                ready = True
+                continue
+            action_event = _parse_event(line)
+            if action_event is not None:
+                if _handle_event(action_event, payload) == "close":
+                    _terminate(proc)
+                    _remove_activity(source, activity_id)
+                    return 0
+        if not ready:
+            return None
 
+        for line in proc.stdout:
+            event = _parse_event(line)
+            if event is None:
+                continue
+            if _handle_event(event, payload) == "close":
+                _terminate(proc)
+                _remove_activity(source, activity_id)
+                return 0
+        try:
+            return proc.wait(timeout=1) or 0
+        except Exception:  # noqa: BLE001
+            return 0
+    finally:
+        _terminate(proc)
+
+
+def _run_python_watcher(source: str, activity_id: str, duration: float,
+                        payload: Dict[str, Any]) -> int:
+    """Fallback khi không có helper Rust hoặc helper không khởi động được."""
     started = time.monotonic()
     hard_deadline = started + MAX_LIFETIME_SEC
     soft_deadline = started + max(30.0, duration + 10.0)
@@ -114,7 +196,7 @@ def main() -> int:
             if not action:
                 continue
             if handle_action(action, payload) == "close":
-                dms.island_remove(source, activity_id)
+                _remove_activity(source, activity_id)
                 return 0
 
         now = time.monotonic()
@@ -139,8 +221,50 @@ def main() -> int:
 
         time.sleep(POLL_INTERVAL_SEC)
 
-    dms.island_remove(source, activity_id)
+    _remove_activity(source, activity_id)
     return 0
+
+
+def main() -> int:
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+    except (TypeError, ValueError):
+        return 1
+    if not isinstance(payload, dict):
+        return 1
+
+    source = str(payload.get("source") or "")
+    activity_id = str(payload.get("id") or "")
+    if not source or not activity_id:
+        return 1
+
+    try:
+        duration = max(
+            1.0, float(payload.get("duration_ms") or 10000) / 1000.0,
+        )
+    except (TypeError, ValueError):
+        duration = 10.0
+
+    native_status = _run_native_watcher(
+        source, activity_id, duration, payload,
+    )
+    if native_status is not None:
+        if native_status == 0:
+            return 0
+        # Watcher Rust lỗi giữa chừng: nếu island vẫn còn, tiếp tục bằng Python.
+        entries = dms.island_list()
+        if entries is not None and any(
+            isinstance(entry, dict)
+            and entry.get("source") == source
+            and entry.get("id") == activity_id
+            for entry in entries
+        ):
+            return _run_python_watcher(
+                source, activity_id, duration, payload,
+            )
+        return native_status
+
+    return _run_python_watcher(source, activity_id, duration, payload)
 
 
 if __name__ == "__main__":

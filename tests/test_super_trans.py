@@ -435,6 +435,16 @@ class TestPresentation(unittest.TestCase):
 
 class TestIsland(unittest.TestCase):
 
+    def setUp(self):
+        # Test mặc định đi qua đường DMS CLI; từng test có thể bật helper Rust.
+        for patcher in (
+            mock.patch.object(island.native, "island_capable", return_value=False),
+            mock.patch.object(island.native, "island_publish", return_value=None),
+            mock.patch.object(island.native, "island_remove", return_value=None),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     def test_build_payload_is_minimal(self):
         payload = island.build_payload(
             "Hello", "Xin chào", "en", "vi", "OpenCode AI",
@@ -450,10 +460,10 @@ class TestIsland(unittest.TestCase):
             ["copy", "analyze"],
         )
 
-    def test_show_in_island_publishes_and_starts_watcher(self):
+    def test_show_in_island_publishes_opens_and_starts_watcher(self):
         with mock.patch.object(island.dms, "available", return_value=True), \
-                mock.patch.object(island.dms, "island_available", return_value=True), \
                 mock.patch.object(island.dms, "island_publish", return_value=True) as publish, \
+                mock.patch.object(island.dms, "island_open", return_value=True) as open_island, \
                 mock.patch.object(island, "_focused_output", return_value="eDP-1"), \
                 mock.patch.object(island, "_spawn_watcher", return_value=True) as watcher:
             self.assertTrue(island.show_in_island(
@@ -464,14 +474,42 @@ class TestIsland(unittest.TestCase):
         self.assertTrue(source.startswith("supertrans-"))
         self.assertTrue(activity_id.startswith("result-"))
         self.assertEqual(payload["screen"], "eDP-1")
+        open_island.assert_called_once_with(source, activity_id)
         watcher_payload = watcher.call_args.args[0]
         self.assertEqual(watcher_payload["source"], source)
         self.assertIn("Lời chào.", watcher_payload["analysis"])
 
+    def test_show_in_island_uses_native_ipc_and_auto_expands(self):
+        with mock.patch.object(island.native, "island_capable", return_value=True), \
+                mock.patch.object(island.native, "island_publish", return_value=True) as native_publish, \
+                mock.patch.object(island.dms, "available", return_value=False), \
+                mock.patch.object(island.dms, "island_publish") as dms_publish, \
+                mock.patch.object(island, "_focused_output", return_value="eDP-1"), \
+                mock.patch.object(island, "_spawn_watcher", return_value=True):
+            self.assertTrue(island.show_in_island(
+                "Hello", "Xin chào", "en", "vi", "Fast",
+            ))
+        native_publish.assert_called_once()
+        dms_publish.assert_not_called()
+
+    def test_show_in_island_falls_back_to_dms_when_native_publish_fails(self):
+        with mock.patch.object(island.native, "island_capable", return_value=True), \
+                mock.patch.object(island.native, "island_publish", return_value=False), \
+                mock.patch.object(island.dms, "available", return_value=True), \
+                mock.patch.object(island.dms, "island_publish", return_value=True) as dms_publish, \
+                mock.patch.object(island.dms, "island_open", return_value=True) as dms_open, \
+                mock.patch.object(island, "_focused_output", return_value="eDP-1"), \
+                mock.patch.object(island, "_spawn_watcher", return_value=True):
+            self.assertTrue(island.show_in_island(
+                "Hello", "Xin chào", "en", "vi", "Fast",
+            ))
+        dms_publish.assert_called_once()
+        dms_open.assert_called_once()
+
     def test_show_in_island_derives_context_from_analysis(self):
         with mock.patch.object(island.dms, "available", return_value=True), \
-                mock.patch.object(island.dms, "island_available", return_value=True), \
                 mock.patch.object(island.dms, "island_publish", return_value=True) as publish, \
+                mock.patch.object(island.dms, "island_open", return_value=True), \
                 mock.patch.object(island, "_focused_output", return_value="eDP-1"), \
                 mock.patch.object(island, "_spawn_watcher", return_value=True):
             self.assertTrue(island.show_in_island(
@@ -485,19 +523,64 @@ class TestIsland(unittest.TestCase):
 
     def test_show_in_island_unavailable(self):
         with mock.patch.object(island.dms, "available", return_value=False), \
+                mock.patch.object(island.native, "island_capable", return_value=False), \
                 mock.patch.object(island.dms, "island_publish") as publish:
             self.assertFalse(island.show_in_island("Hello", "Xin chào"))
         publish.assert_not_called()
 
     def test_show_in_island_rolls_back_when_watcher_fails(self):
         with mock.patch.object(island.dms, "available", return_value=True), \
-                mock.patch.object(island.dms, "island_available", return_value=True), \
                 mock.patch.object(island.dms, "island_publish", return_value=True), \
+                mock.patch.object(island.dms, "island_open", return_value=True), \
                 mock.patch.object(island.dms, "island_remove", return_value=True) as remove, \
                 mock.patch.object(island, "_focused_output", return_value="eDP-1"), \
                 mock.patch.object(island, "_spawn_watcher", return_value=False):
             self.assertFalse(island.show_in_island("Hello", "Xin chào"))
         remove.assert_called_once()
+
+    def test_show_pending_publishes_loading_and_expands(self):
+        with mock.patch.object(island.dms, "available", return_value=True), \
+                mock.patch.object(island.dms, "island_publish", return_value=True) as publish, \
+                mock.patch.object(island.dms, "island_open", return_value=True) as open_island, \
+                mock.patch.object(island, "_focused_output", return_value="eDP-1"):
+            pending = island.show_pending(
+                "Hello", "en", "vi", "OpenCode AI", timeout_ms=10000,
+            )
+        self.assertIsNotNone(pending)
+        source, activity_id, payload = publish.call_args.args
+        self.assertEqual(source, pending.source)
+        self.assertEqual(activity_id, pending.activity_id)
+        self.assertEqual(payload["title"], "Hello : Đang dịch…")
+        self.assertEqual(payload["duration"], island.PENDING_DURATION_MS)
+        self.assertEqual(payload["screen"], "eDP-1")
+        self.assertNotIn("actions", payload)
+        open_island.assert_called_once_with(source, activity_id)
+        self.assertTrue(pending.active)
+
+    def test_pending_cancel_removes_activity_once(self):
+        pending = island.PendingIsland("src", "id")
+        with mock.patch.object(island.dms, "island_remove",
+                               return_value=True) as remove:
+            pending.cancel()
+            pending.cancel()
+        self.assertFalse(pending.active)
+        remove.assert_called_once_with("src", "id")
+
+    def test_show_in_island_updates_pending_activity_in_place(self):
+        pending = island.PendingIsland("src", "id")
+        with mock.patch.object(island.dms, "available", return_value=True), \
+                mock.patch.object(island.dms, "island_publish", return_value=True) as publish, \
+                mock.patch.object(island.dms, "island_open", return_value=True), \
+                mock.patch.object(island, "_focused_output", return_value="eDP-1"), \
+                mock.patch.object(island, "_spawn_watcher", return_value=True):
+            self.assertTrue(island.show_in_island(
+                "Hello", "Xin chào", "en", "vi", "Fast",
+                pending=pending,
+            ))
+        self.assertEqual(publish.call_args.args[0], "src")
+        self.assertEqual(publish.call_args.args[1], "id")
+        self.assertEqual(publish.call_args.args[2]["actions"][0]["id"], "copy")
+        self.assertFalse(pending.active)
 
     @mock.patch("super_trans.core.island_watch.set_clipboard_text",
                 return_value=True)
@@ -554,6 +637,57 @@ class TestIsland(unittest.TestCase):
         self.assertIn("Lời chào.", notepad.call_args.args[1])
 
 
+class TestNativeIslandBridge(unittest.TestCase):
+
+    @mock.patch("super_trans.core.native.subprocess.run")
+    @mock.patch("super_trans.core.native.find_binary", return_value="/bin/true")
+    @mock.patch("super_trans.core.native.island_capable", return_value=True)
+    def test_publish_uses_stdin(self, _capable, _binary, run):
+        run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="PUBLISHED=1\nOPENED=1\n",
+            stderr="",
+        )
+        self.assertTrue(native.island_publish(
+            "src", "id", {"title": "Hello"}, timeout=1,
+        ))
+        args, kwargs = run.call_args
+        self.assertEqual(
+            args[0],
+            ["/bin/true", "island", "publish", "src", "id"],
+        )
+        self.assertIn('"title": "Hello"', kwargs["input"])
+
+    @mock.patch("super_trans.core.native.subprocess.Popen")
+    @mock.patch("super_trans.core.native.find_binary", return_value="/bin/true")
+    @mock.patch("super_trans.core.native.island_capable", return_value=True)
+    def test_watch_spawns_native_watcher(self, _capable, _binary, popen):
+        sentinel = object()
+        popen.return_value = sentinel
+        self.assertIs(native.island_watch("src", "id", 10000), sentinel)
+        args, _ = popen.call_args
+        self.assertEqual(
+            args[0][:5],
+            ["/bin/true", "island", "watch", "src", "id"],
+        )
+        self.assertIn("--duration-ms", args[0])
+
+
+class TestIslandWatchEvents(unittest.TestCase):
+
+    def test_parse_ready_and_action_events(self):
+        self.assertIsNone(island_watch._parse_event('{"type":"ready"}'))
+        self.assertEqual(
+            island_watch._parse_event(
+                '{"type":"action","source":"src","id":"id","action":"copy"}'
+            )["action"],
+            "copy",
+        )
+        self.assertEqual(
+            island_watch._parse_event('{"action":"analyze"}')["action"],
+            "analyze",
+        )
+
+
 class TestDMSIslandIPC(unittest.TestCase):
 
     @staticmethod
@@ -583,6 +717,16 @@ class TestDMSIslandIPC(unittest.TestCase):
             ["ipc", "call", "islandActivity", "publish", "src", "id", "-"],
         )
         self.assertIn('"title": "Hello"', kwargs["input_text"])
+
+    @mock.patch("super_trans.core.dms._run")
+    def test_open(self, run):
+        run.return_value = self._completed(stdout="ISLAND_ACTIVITY_OPENED")
+        self.assertTrue(dms.island_open("src", "id"))
+        args, _ = run.call_args
+        self.assertEqual(
+            args[0],
+            ["ipc", "call", "islandActivity", "open", "src", "id"],
+        )
 
     @mock.patch("super_trans.core.dms._run")
     def test_list_and_actions(self, run):
@@ -680,16 +824,19 @@ class TestCLI(unittest.TestCase):
         "history_limit": 500,
     }
 
-    def _run_cli(self, argv, ai_result=("Hello", "## Analysis", "vi", "OpenCode AI")):
+    def _run_cli(self, argv, ai_result=("Hello", "## Analysis", "vi", "OpenCode AI"),
+                 pending=None, config=None):
         stdout = io.StringIO()
         with mock.patch.object(sys, "argv", ["trans", *argv]), \
-                mock.patch("super_trans.cli.load_config", return_value=self.CONFIG.copy()), \
+                mock.patch("super_trans.cli.load_config", return_value=(config or self.CONFIG).copy()), \
                 mock.patch("super_trans.cli._translate_with_ai", return_value=ai_result) as ai, \
                 mock.patch("super_trans.cli.open_in_dms_notepad", return_value=True) as notepad, \
                 mock.patch("super_trans.cli.display_result", return_value=True) as display, \
+                mock.patch("super_trans.cli.show_pending", return_value=pending) as show_pending_mock, \
                 mock.patch("super_trans.cli.set_clipboard_text", return_value=True), \
                 contextlib.redirect_stdout(stdout):
             code = cli.main()
+        self.last_show_pending = show_pending_mock
         return code, stdout.getvalue(), ai, notepad, display
 
     def test_ai_notepad_skips_duplicate_launcher(self):
@@ -725,6 +872,34 @@ class TestCLI(unittest.TestCase):
         notepad.assert_not_called()
         display.assert_called_once()
         self.assertEqual(display.call_args.kwargs["mode"], "island")
+
+    def test_island_cache_hit_skips_loading(self):
+        with mock.patch("super_trans.cli.store.lookup", return_value={
+            "translated_text": "Xin chào",
+            "detected_lang": "en",
+        }):
+            code, output, _ai, _notepad, display = self._run_cli(
+                ["--output", "island", "Hello"],
+                config={**self.CONFIG, "cache_enabled": True},
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(output.strip(), "Xin chào")
+        self.last_show_pending.assert_not_called()
+        self.assertIsNone(display.call_args.kwargs["pending"])
+
+    def test_island_shows_loading_before_translation(self):
+        pending = mock.Mock(active=True)
+        code, output, _ai, _notepad, display = self._run_cli(
+            ["--engine", "ai", "--output", "island", "xin chào"],
+            pending=pending,
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(output.strip(), "Hello")
+        self.last_show_pending.assert_called_once()
+        self.assertEqual(
+            self.last_show_pending.call_args.args[0], "xin chào",
+        )
+        self.assertIs(display.call_args.kwargs["pending"], pending)
 
 
 class TestConfig(unittest.TestCase):

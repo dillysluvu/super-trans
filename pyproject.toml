@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "super-trans"
-version = "1.3.0"
+version = "1.4.0"
 description = "Siêu tiện ích dịch thuật toàn hệ thống cho Fedora/Niri/DMS"
 readme = "README.md"
 requires-python = ">=3.9"

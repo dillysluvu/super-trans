@@ -2,7 +2,7 @@
 
 > **Hợp tác phát triển giữa Antigravity AI và OpenCode AI**, tối ưu hóa riêng cho **Fedora Linux, Niri Wayland Compositor và DMS Shell**.
 
-SuperTrans sống trong hệ thống thay vì mở thêm một cửa sổ rời rạc: bôi đen chữ, nhấn phím tắt, nhận bản dịch ngay trên **Dynamic Island của DMS**, trong Notepad hoặc dán đè trực tiếp tại con trỏ. Giao diện kết quả được tối giản thành hai dòng `gốc : nghĩa` và `engine · ngữ cảnh`. Bản dịch được cache cục bộ, có lịch sử, có thể hoàn tác, và OCR được tăng cường trước khi nhận diện.
+SuperTrans sống trong hệ thống thay vì mở thêm một cửa sổ rời rạc: bôi đen chữ, nhấn phím tắt, nhận bản dịch ngay trên **Dynamic Island của DMS**, trong Notepad hoặc dán đè trực tiếp tại con trỏ. Giao diện kết quả được tối giản thành hai dòng `gốc : nghĩa` và `engine · ngữ cảnh`. Island **tự mở rộng ngay khi bắt đầu dịch**, hiện `Đang dịch…` rồi cập nhật kết quả tại chỗ nên không có cảm giác chờ đợi. Bản dịch được cache cục bộ, có lịch sử, có thể hoàn tác, và OCR được tăng cường trước khi nhận diện.
 
 ---
 
@@ -11,9 +11,9 @@ SuperTrans sống trong hệ thống thay vì mở thêm một cửa sổ rời 
 ### 1. Dịch thuật tích hợp DMS
 
 - **DMS Dynamic Island**: kết quả hiện ngay trên island với bố cục tối giản:
-  - dòng 1: `gốc : nghĩa` (rút gọn cân bằng hai phía);
-  - dòng 2: `engine · ngữ cảnh` (ví dụ `OpenCode AI · lời chào thân mật`);
-  - bấm vào island để mở rộng xem bản dịch đầy đủ, nút **Sao chép** và **Phân tích**.
+  - tự mở rộng khi bắt đầu dịch, hiện `gốc : Đang dịch…` và icon nhấp nháy;
+  - khi có kết quả, cập nhật cùng activity thành `gốc : nghĩa` + `engine · ngữ cảnh`, không thu gọn rồi bung lại;
+  - island mở sẵn; phần thân chứa bản dịch đầy đủ, kèm nút **Sao chép** và **Phân tích**; bấm ra ngoài để thu gọn.
 - **DMS Launcher / Spotlight (`dms dmenu`)**: phương án dự phòng và vẫn dùng được khi island tắt; kết quả chỉ còn một dòng `gốc : nghĩa` cùng ba hành động ngắn gọn.
 - **DMS Notepad**: phân tích chuyên sâu của OpenCode AI được lưu thành Markdown và mở trong Notepad.
 - **DMS Clipboard**: bản dịch tự động nằm trong lịch sử clipboard.
@@ -47,8 +47,10 @@ SuperTrans sống trong hệ thống thay vì mở thêm một cửa sổ rời 
 ### 5. Helper Rust tùy chọn
 
 - Helper `super-trans-native` chia văn bản rất dài thành đoạn trước khi gửi dịch.
-- Build tự động nếu máy có `cargo`; nếu không, SuperTrans dùng thuần Python và mọi tính năng vẫn hoạt động.
-- **Lưu ý hiệu năng:** độ trễ dịch chủ yếu đến từ mạng (Google GTX) và Tesseract. Rust chỉ giúp phần chia văn bản lớn nhanh hơn, không làm bản thân bản dịch nhanh hơn.
+- Helper còn nói chuyện **trực tiếp với Unix socket của Quickshell/DMS** để publish, mở rộng, xóa activity và poll nút bấm — không spawn tiến trình `dms` cho mỗi thao tác.
+- Watcher Rust poll mỗi ~80 ms, nên nút **Sao chép / Phân tích** phản hồi nhanh hơn hẳn vòng poll Python cũ.
+- Build tự động nếu máy có `cargo`; nếu không, SuperTrans dùng Python/DMS CLI và mọi tính năng vẫn hoạt động.
+- **Lưu ý hiệu năng:** độ trễ dịch chủ yếu đến từ mạng (Google GTX) và Tesseract. Rust giúp phần chia văn bản lớn và thao tác island mượt hơn, không làm bản thân bản dịch nhanh hơn.
 
 ---
 
@@ -64,7 +66,7 @@ SuperTrans sống trong hệ thống thay vì mở thêm một cửa sổ rời 
 | `fuzzel` | Fallback Launcher | Tùy chọn |
 | `opencode` | Engine AI | Cần cho `-e ai` |
 | Pillow hoặc ImageMagick | Tăng cường ảnh OCR | Tùy chọn, khuyến nghị |
-| `cargo` / `rustc` | Build helper Rust | Tùy chọn |
+| `cargo` | Build helper Rust (kèm IPC island) | Tùy chọn |
 | GTK4 + `gtk4-layer-shell` | Thẻ OSD nổi | Tùy chọn cho `--output osd` |
 
 Cài đặt gói cơ bản trên Fedora:
@@ -87,7 +89,7 @@ cd ~/trans
 Trình cài đặt sẽ:
 
 - Liên kết lệnh `super-trans` và `trans` vào `~/.local/bin`.
-- Build helper Rust vào `~/.local/lib/super-trans/super-trans-native` nếu có `cargo`.
+- Build helper Rust (chia văn bản + IPC island) vào `~/.local/lib/super-trans/super-trans-native` nếu có `cargo`.
 - Tải các gói OCR `fra`, `chi_sim`, `vie` vào `~/.local/share/tessdata` (nếu thiếu).
 - Tạo phím tắt Niri tại `~/.config/niri/dms/trans.kdl` và thêm include vào `config.kdl`.
 - Nạp lại cấu hình Niri nếu `niri validate` thành công.
@@ -118,7 +120,7 @@ Gỡ cài đặt:
 
 | Phím tắt | Chức năng | Cơ chế hoạt động |
 |---|---|---|
-| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>T</kbd> | **Dịch trên Dynamic Island** | Bôi đen text → island hiện `gốc : nghĩa` + `engine · ngữ cảnh`; bấm island để xem đầy đủ. |
+| <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>T</kbd> | **Dịch trên Dynamic Island** | Bôi đen text → island tự mở rộng, hiện `Đang dịch…` rồi cập nhật `gốc : nghĩa` + `engine · ngữ cảnh`; phần thân chứa bản dịch đầy đủ. |
 | <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>R</kbd> | **Thay thế trực tiếp tại chỗ** | Bôi đen text → dịch và dán đè, không hiện thông báo. |
 | <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>Z</kbd> | **Hoàn tác thay thế gần nhất** | Gửi `Ctrl+Z` tới cửa sổ đã thay thế. |
 | <kbd>Mod</kbd> + <kbd>Alt</kbd> + <kbd>A</kbd> | **Phân tích chuyên sâu** | OpenCode AI phân tích thành ngữ, ngữ pháp, sắc thái trong DMS Notepad. |
@@ -274,7 +276,7 @@ Giá trị `output_mode`:
 - `notification`: Notification desktop.
 - `none`: Chỉ in ra stdout.
 
-Khi island mở rộng, phần thân hiển thị bản dịch đầy đủ; hai nút **Sao chép** và **Phân tích** được xử lý bởi tiến trình nền nhỏ và tự thoát khi island đóng. Nếu DMS tắt activity hoặc không chạy, SuperTrans tự quay về Launcher để không mất thao tác.
+Với `island`, SuperTrans publish ngay một activity `Đang dịch…` và gọi `islandActivity open` để mở rộng trước khi gọi mạng/AI. Khi có kết quả, cùng source/id được cập nhật tại chỗ, giữ trạng thái mở rộng; phần thân hiển thị bản dịch đầy đủ. Hai nút **Sao chép** và **Phân tích** được xử lý bởi tiến trình nền nhỏ (watcher Rust khi có helper) và tự thoát khi island đóng. Nếu DMS tắt activity hoặc không chạy, SuperTrans tự quay về Launcher để không mất thao tác.
 
 ---
 
@@ -325,10 +327,15 @@ cargo build --release --manifest-path native/Cargo.toml
 trans --doctor
 ```
 
-- Helper chỉ có một nhiệm vụ: chia văn bản dài thành đoạn ≤ giới hạn, ưu tiên xuống dòng → cuối câu → khoảng trắng → cắt cứng.
-- Python tự động dùng helper khi văn bản ≥ 4000 ký tự; nếu helper lỗi hoặc chưa build, quay về thuần Python.
-- Kết quả được kiểm tra lại (không mất nội dung) trước khi dùng.
-- **Không kỳ vọng Rust làm dịch nhanh hơn đáng kể**: thời gian chủ yếu nằm ở request mạng và OCR. Rust hữu ích khi dịch tài liệu rất lớn và muốn giảm thời gian xử lý chuỗi.
+Helper có hai nhiệm vụ:
+
+1. **Chia văn bản dài** thành đoạn ≤ giới hạn, ưu tiên xuống dòng → cuối câu → khoảng trắng → cắt cứng. Python tự dùng helper khi văn bản ≥ 4000 ký tự và kiểm tra lại để không mất nội dung.
+2. **IPC Dynamic Island trực tiếp**: kết nối Unix socket của Quickshell để `publish`, `open`, `remove` và `pollActions`. Watcher Rust poll ~80 ms, phát JSON line cho tiến trình Python xử lý nút bấm. Nhờ vậy không phải spawn `dms` mỗi vòng poll.
+
+- Nếu helper chưa build, phiên bản cũ, hoặc socket không khả dụng, SuperTrans tự quay về DMS CLI + vòng poll Python.
+- `serde_json` được dùng để parse payload/action trong Rust.
+- Kiểm tra helper nhận đúng chưa: `trans --doctor` sẽ hiện **Rust IPC island — Quickshell socket trực tiếp**.
+- **Không kỳ vọng Rust làm dịch nhanh hơn đáng kể**: thời gian chủ yếu nằm ở request mạng và OCR. Rust cải thiện độ mượt của island và phản hồi nút bấm.
 
 ---
 
@@ -345,7 +352,7 @@ SUPERTRANS_LIVE_TESTS=1 python3 -m unittest discover -s tests -v
 cargo test --manifest-path native/Cargo.toml
 ```
 
-Bộ kiểm thử bao quát: nhận diện Việt/Pháp/Trung, chia nhỏ văn bản dài (Python + Rust), parse phản hồi dịch, retry mạng, lọc ngôn ngữ OCR, trạng thái DMS dmenu, payload Dynamic Island, xử lý nút Sao chép/Phân tích, cache/lịch sử SQLite, undo, an toàn PRIMARY/clipboard, tăng cường ảnh, và logic tránh mở trùng Notepad + island/Launcher.
+Bộ kiểm thử bao quát: nhận diện Việt/Pháp/Trung, chia nhỏ văn bản dài (Python + Rust), parse phản hồi dịch, retry mạng, lọc ngôn ngữ OCR, trạng thái DMS dmenu, payload Dynamic Island (kể cả trạng thái `Đang dịch…` và auto-expand), IPC Rust, xử lý nút Sao chép/Phân tích, cache/lịch sử SQLite, undo, an toàn PRIMARY/clipboard, tăng cường ảnh, và logic tránh mở trùng Notepad + island/Launcher.
 
 ---
 
@@ -354,6 +361,8 @@ Bộ kiểm thử bao quát: nhận diện Việt/Pháp/Trung, chia nhỏ văn b
 **Không thấy kết quả trên Dynamic Island**
 - Kiểm tra `dms ipc call islandActivity availability` trả về `"islandPresent": true` và `"activitiesAvailable": true`.
 - Bật activity/island trong cài đặt DMS nếu đang tắt.
+- Island tự mở rộng bằng `dms ipc call islandActivity open <source> <id>`; kiểm tra `dms ipc call island status` thấy `"expanded":true`.
+- Nếu helper Rust cũ, chạy lại `./install.sh` hoặc `cargo build --release --manifest-path native/Cargo.toml` rồi cài bản mới; `trans --doctor` phải hiện **Rust IPC island**.
 - SuperTrans sẽ tự fallback sang DMS Launcher rồi `fuzzel` nếu island không phản hồi.
 - Chạy `trans --doctor` để xem mục **Dynamic Island**.
 - Nếu chỉ muốn kiểm tra nhanh: `trans --output island "Hello"`.
@@ -431,7 +440,9 @@ super_trans/
 │   └── opencode_engine.py  # OpenCode AI: dịch sạch + phân tích
 native/
 ├── Cargo.toml
-└── src/main.rs             # Helper Rust chia văn bản dài
+└── src/
+    ├── main.rs             # Helper Rust: chia văn bản dài
+    └── island.rs           # IPC Quickshell + watcher Dynamic Island
 tests/
 └── test_super_trans.py
 ```

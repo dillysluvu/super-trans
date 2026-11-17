@@ -71,7 +71,8 @@ def display_result(original: str, translated: str, src_lang: str = "auto",
                    mode: str = "island", timeout_ms: int = 6000,
                    ai_model: str = None, ai_timeout: float = 120.0,
                    analysis: str = "", context: str = "",
-                   island_timeout_ms: int = 10000) -> bool:
+                   island_timeout_ms: int = 10000,
+                   pending=None) -> bool:
     """
     Điểm tập trung hiển thị output:
     - 'island': Dynamic Island của DMS, tối giản ``gốc : nghĩa``
@@ -96,7 +97,7 @@ def display_result(original: str, translated: str, src_lang: str = "auto",
             original, translated, src_lang, tgt_lang, engine_name,
             context=context, analysis=analysis,
             ai_model=ai_model, ai_timeout=ai_timeout,
-            timeout_ms=island_timeout_ms,
+            timeout_ms=island_timeout_ms, pending=pending,
         ):
             return True
         # Island không khả dụng: quay lại launcher để vẫn thao tác được.
